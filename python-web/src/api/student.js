@@ -52,18 +52,51 @@ export const studentApi = {
     })
   },
 
-  batchDelete(ids) {
-    return request('/students/batch', {
-      method: 'DELETE',
-      body: JSON.stringify({ ids })
-    })
-  },
-
   getStatistics() {
     return request('/students/statistics')
   },
 
-  healthCheck() {
-    return request('/health')
+  uploadFile(file) {
+    const formData = new FormData()
+    formData.append('file', file)
+    return fetch(`${API_BASE_URL}/upload`, {
+      method: 'POST',
+      body: formData
+    }).then(res => res.json())
+  },
+
+  async exportStudents() {
+    try {
+      const response = await fetch(`${API_BASE_URL}/students/export`)
+      if (!response.ok) {
+        throw new Error('导出失败')
+      }
+      const blob = await response.blob()
+      const url = window.URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      const contentDisposition = response.headers.get('Content-Disposition')
+      let filename = 'students_export.csv'
+      if (contentDisposition) {
+        const match = contentDisposition.match(/filename=["']?(.+)["']?/)
+        if (match) filename = match[1]
+      }
+      a.download = filename
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      window.URL.revokeObjectURL(url)
+    } catch (error) {
+      throw new Error(error.message || '导出失败')
+    }
+  },
+
+  importStudents(file) {
+    const formData = new FormData()
+    formData.append('file', file)
+    return fetch(`${API_BASE_URL}/students/import`, {
+      method: 'POST',
+      body: formData
+    }).then(res => res.json())
   }
 }

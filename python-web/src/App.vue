@@ -1,12 +1,12 @@
 <template>
   <div class="app-container">
     <header class="app-header">
-      <h1>🎓 学生管理系统</h1>
+      <h1>学生管理系统</h1>
       <p>基于 Vue 3 + Python Flask 的前后端分离应用</p>
     </header>
 
-    <div v-if="error" class="error" @click="error = ''">
-      ❌ {{ error }}
+    <div v-if="error" class="error-toast" @click="error = ''">
+      {{ error }}
     </div>
 
     <div class="toolbar">
@@ -14,32 +14,45 @@
         <input
           v-model="searchKeyword"
           type="text"
-          placeholder="🔍 搜索学生姓名..."
+          placeholder="搜索学生姓名..."
           @input="handleSearch"
         />
       </div>
-      <button class="btn btn-primary" @click="openAddModal">
-        ➕ 添加学生
-      </button>
-      <button class="btn btn-warning" @click="loadStudents">
-        🔄 刷新
-      </button>
+      <div class="toolbar-actions">
+        <button class="btn btn-secondary" @click="openAddModal">
+          添加学生
+        </button>
+        <button class="btn btn-secondary" @click="handleExport">
+          导出
+        </button>
+        <button class="btn btn-secondary" @click="triggerImport">
+          导入
+        </button>
+        <input
+          ref="importInput"
+          type="file"
+          accept=".csv"
+          style="display: none"
+          @change="handleImport"
+        />
+      </div>
     </div>
 
     <Statistics :statistics="statistics" />
 
     <div v-if="loading" class="loading">
-      ⏳ 加载中...
+      加载中...
     </div>
 
     <div v-else-if="students.length === 0" class="empty">
-      <h3>📭 暂无学生数据</h3>
+      <h3>暂无学生数据</h3>
       <p>点击"添加学生"按钮创建第一条记录</p>
     </div>
 
-    <table v-else class="student-table">
+    <table v-else class="data-table">
       <thead>
         <tr>
+          <th>头像</th>
           <th>ID</th>
           <th>姓名</th>
           <th>年龄</th>
@@ -49,6 +62,12 @@
       </thead>
       <tbody>
         <tr v-for="student in students" :key="student.student_id">
+          <td class="avatar-cell">
+            <div class="avatar" :class="{ 'has-avatar': student.avatar_url }">
+              <img v-if="student.avatar_url" :src="getFullAvatarUrl(student.avatar_url)" alt="avatar" />
+              <span v-else>{{ student.name.charAt(0) }}</span>
+            </div>
+          </td>
           <td>{{ student.student_id }}</td>
           <td>{{ student.name }}</td>
           <td>{{ student.age }}</td>
@@ -58,11 +77,11 @@
             </span>
           </td>
           <td class="actions">
-            <button class="btn btn-primary btn-sm" @click="openEditModal(student)">
-              ✏️ 编辑
+            <button class="btn btn-text" @click="openEditModal(student)">
+              编辑
             </button>
-            <button class="btn btn-danger btn-sm" @click="handleDelete(student.student_id)">
-              🗑️ 删除
+            <button class="btn btn-text btn-danger" @click="handleDelete(student.student_id)">
+              删除
             </button>
           </td>
         </tr>
@@ -91,6 +110,7 @@ const error = ref('')
 const searchKeyword = ref('')
 const showModal = ref(false)
 const selectedStudent = ref(null)
+const importInput = ref(null)
 
 async function loadStudents() {
   loading.value = true
@@ -171,11 +191,43 @@ async function handleDelete(id) {
   }
 }
 
+function handleExport() {
+  studentApi.exportStudents()
+}
+
+function triggerImport() {
+  importInput.value.click()
+}
+
+async function handleImport(event) {
+  const file = event.target.files[0]
+  if (!file) return
+
+  try {
+    const res = await studentApi.importStudents(file)
+    if (res.code === 200) {
+      alert(res.message)
+      await loadStudents()
+    } else {
+      alert(res.message)
+    }
+  } catch (e) {
+    alert('导入失败: ' + e.message)
+  }
+
+  event.target.value = ''
+}
+
 function getGradeClass(grade) {
-  if (grade >= 90) return 'grade-excellent'
-  if (grade >= 80) return 'grade-good'
-  if (grade >= 60) return 'grade-pass'
-  return 'grade-fail'
+  if (grade >= 90) return 'grade-a'
+  if (grade >= 80) return 'grade-b'
+  if (grade >= 60) return 'grade-c'
+  return 'grade-d'
+}
+
+function getFullAvatarUrl(url) {
+  if (url.startsWith('http')) return url
+  return `http://127.0.0.1:5000${url}`
 }
 
 onMounted(() => {
@@ -184,21 +236,21 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.grade-excellent {
-  color: #2ecc71;
-  font-weight: bold;
+.grade-a {
+  color: #2d8cf0;
+  font-weight: 600;
 }
 
-.grade-good {
-  color: #3498db;
-  font-weight: bold;
+.grade-b {
+  color: #19be6b;
+  font-weight: 600;
 }
 
-.grade-pass {
-  color: #f39c12;
+.grade-c {
+  color: #ff9900;
 }
 
-.grade-fail {
-  color: #e74c3c;
+.grade-d {
+  color: #ed4014;
 }
 </style>

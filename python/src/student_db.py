@@ -6,7 +6,7 @@ class StudentDB:
     def __init__(self):
         self.connection = pymysql.connect(
             host='localhost',
-            port=3306,
+            port=3308,
             user='root',
             password='Pxc7890.',
             database='school_db',
@@ -22,58 +22,65 @@ class StudentDB:
                     name VARCHAR(100) NOT NULL,
                     age INT NOT NULL,
                     grade DOUBLE NOT NULL,
+                    avatar_url VARCHAR(500),
                     create_time DATETIME,
                     update_time DATETIME
                 )
             """)
             self.connection.commit()
 
-    def create(self, name, age, grade):
+    def create(self, name, age, grade, avatar_url=None):
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         with self.connection.cursor() as cursor:
             cursor.execute(
-                "INSERT INTO students (name, age, grade, create_time, update_time) VALUES (%s, %s, %s, %s, %s)",
-                (name, age, grade, now, now)
+                "INSERT INTO students (name, age, grade, avatar_url, create_time, update_time) VALUES (%s, %s, %s, %s, %s, %s)",
+                (name, age, grade, avatar_url, now, now)
             )
             self.connection.commit()
             return cursor.lastrowid
 
     def get_all(self):
         with self.connection.cursor() as cursor:
-            cursor.execute("SELECT id, name, age, grade FROM students")
+            cursor.execute("SELECT id, name, age, grade, avatar_url, create_time FROM students")
             rows = cursor.fetchall()
             return [{
                 "student_id": row[0],
                 "name": row[1],
                 "age": row[2],
-                "grade": row[3]
+                "grade": row[3],
+                "avatar_url": row[4],
+                "create_time": row[5]
             } for row in rows]
 
     def get_by_id(self, student_id):
         with self.connection.cursor() as cursor:
-            cursor.execute("SELECT id, name, age, grade FROM students WHERE id = %s", (student_id,))
+            cursor.execute("SELECT id, name, age, grade, avatar_url, create_time FROM students WHERE id = %s", (student_id,))
             row = cursor.fetchone()
             if row:
                 return {
                     "student_id": row[0],
                     "name": row[1],
                     "age": row[2],
-                    "grade": row[3]
+                    "grade": row[3],
+                    "avatar_url": row[4],
+                    "create_time": row[5]
                 }
             return None
 
     def get_by_name(self, name):
         with self.connection.cursor() as cursor:
-            cursor.execute("SELECT id, name, age, grade FROM students WHERE name LIKE %s", (f"%{name}%",))
+            cursor.execute("SELECT id, name, age, grade, avatar_url, create_time FROM students WHERE name LIKE %s", (f"%{name}%",))
             rows = cursor.fetchall()
             return [{
                 "student_id": row[0],
                 "name": row[1],
                 "age": row[2],
-                "grade": row[3]
+                "grade": row[3],
+                "avatar_url": row[4],
+                "create_time": row[5]
             } for row in rows]
 
-    def update(self, student_id, name=None, age=None, grade=None):
+    def update(self, student_id, name=None, age=None, grade=None, avatar_url=None):
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         updates = []
         params = []
@@ -87,6 +94,9 @@ class StudentDB:
         if grade is not None:
             updates.append("grade = %s")
             params.append(grade)
+        if avatar_url is not None:
+            updates.append("avatar_url = %s")
+            params.append(avatar_url)
 
         if updates:
             updates.append("update_time = %s")
@@ -128,18 +138,22 @@ class StudentDB:
 
 
 class StudentModel:
-    def __init__(self, student_id, name, age, grade):
+    def __init__(self, student_id, name, age, grade, avatar_url=None, create_time=None):
         self.student_id = student_id
         self.name = name
         self.age = age
         self.grade = grade
+        self.avatar_url = avatar_url
+        self.create_time = create_time
 
     def to_dict(self):
         return {
             "student_id": self.student_id,
             "name": self.name,
             "age": self.age,
-            "grade": self.grade
+            "grade": self.grade,
+            "avatar_url": self.avatar_url,
+            "create_time": self.create_time
         }
 
 
@@ -147,7 +161,7 @@ class StudentService:
     def __init__(self):
         self.db = StudentDB()
 
-    def create_student(self, name, age, grade):
+    def create_student(self, name, age, grade, avatar_url=None):
         if not name or len(name.strip()) == 0:
             raise ValueError("姓名不能为空")
         if age < 1 or age > 150:
@@ -155,24 +169,45 @@ class StudentService:
         if grade < 0 or grade > 100:
             raise ValueError("成绩必须在0-100之间")
 
-        student_id = self.db.create(name, age, grade)
-        return StudentModel(student_id, name, age, grade)
+        student_id = self.db.create(name, age, grade, avatar_url)
+        return StudentModel(student_id, name, age, grade, avatar_url)
 
     def get_all_students(self):
         rows = self.db.get_all()
-        return [StudentModel(row["student_id"], row["name"], row["age"], row["grade"]) for row in rows]
+        return [StudentModel(
+            row["student_id"],
+            row["name"],
+            row["age"],
+            row["grade"],
+            row.get("avatar_url"),
+            row.get("create_time")
+        ) for row in rows]
 
     def get_student_by_id(self, student_id):
         row = self.db.get_by_id(student_id)
         if not row:
             raise ValueError(f"学生ID {student_id} 不存在")
-        return StudentModel(row["student_id"], row["name"], row["age"], row["grade"])
+        return StudentModel(
+            row["student_id"],
+            row["name"],
+            row["age"],
+            row["grade"],
+            row.get("avatar_url"),
+            row.get("create_time")
+        )
 
     def search_by_name(self, name):
         rows = self.db.get_by_name(name)
-        return [StudentModel(row["student_id"], row["name"], row["age"], row["grade"]) for row in rows]
+        return [StudentModel(
+            row["student_id"],
+            row["name"],
+            row["age"],
+            row["grade"],
+            row.get("avatar_url"),
+            row.get("create_time")
+        ) for row in rows]
 
-    def update_student(self, student_id, name=None, age=None, grade=None):
+    def update_student(self, student_id, name=None, age=None, grade=None, avatar_url=None):
         if name is not None and len(name.strip()) == 0:
             raise ValueError("姓名不能为空")
         if age is not None and (age < 1 or age > 150):
@@ -183,7 +218,7 @@ class StudentService:
         if not self.db.exists(student_id):
             raise ValueError(f"学生ID {student_id} 不存在")
 
-        self.db.update(student_id, name, age, grade)
+        self.db.update(student_id, name, age, grade, avatar_url)
         return self.get_student_by_id(student_id)
 
     def delete_student(self, student_id):
