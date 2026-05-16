@@ -1,10 +1,35 @@
 import os
-import csv
 import uuid
 from datetime import datetime
+from io import BytesIO
 from flask import Flask, jsonify, request, send_file
 from flask_cors import CORS
+from openpyxl import Workbook
 from src.student_db import student_service
+from src.notifications.config import notification_config
+from src.notification_db import notification_db
+from src.notifications.email_sender import EmailSender
+from src.notifications.sms_sender import SmsSender
+from src.notifications.verification_service import verification_service
+
+email_sender = None
+sms_sender = None
+
+if notification_config.EMAIL_ENABLED:
+    email_sender = EmailSender(
+        notification_config.ALIYUN_ACCESS_KEY_ID,
+        notification_config.ALIYUN_ACCESS_KEY_SECRET,
+        notification_config.ALIYUN_REGION
+    )
+    verification_service.set_email_sender(email_sender)
+
+if notification_config.SMS_ENABLED:
+    sms_sender = SmsSender(
+        notification_config.ALIYUN_ACCESS_KEY_ID,
+        notification_config.ALIYUN_ACCESS_KEY_SECRET,
+        notification_config.ALIYUN_REGION
+    )
+    verification_service.set_sms_sender(sms_sender)
 
 app = Flask(__name__)
 CORS(app)
@@ -205,32 +230,30 @@ def serve_uploaded_file(filename):
 def export_students():
     students = student_service.get_all_students()
 
-    export_folder = 'exports'
-    if not os.path.exists(export_folder):
-        os.makedirs(export_folder)
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "学生数据"
+    ws.append(['ID', '姓名', '年龄', '成绩', '创建时间', '测试列'])
 
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    filename = f"students_export_{timestamp}.csv"
-    filepath = os.path.join(export_folder, filename)
+    for student in students:
+        ws.append([
+            student.student_id,
+            student.name,
+            student.age,
+            student.grade,
+            str(student.create_time) if hasattr(student, 'create_time') and student.create_time else '',
+            student.test_column if hasattr(student, 'test_column') else f"test-{student.student_id}-666"
+        ])
 
-    with open(filepath, 'w', newline='', encoding='utf-8-sig') as csvfile:
-        writer = csv.writer(csvfile)
-        writer.writerow(['ID', '姓名', '年龄', '成绩', '创建时间'])
-
-        for student in students:
-            writer.writerow([
-                student.student_id,
-                student.name,
-                student.age,
-                student.grade,
-                student.create_time if hasattr(student, 'create_time') else ''
-            ])
+    buffer = BytesIO()
+    wb.save(buffer)
+    buffer.seek(0)
 
     return send_file(
-        filepath,
-        mimetype='text/csv',
+        buffer,
+        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         as_attachment=True,
-        download_name=filename
+        download_name=f"students_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
     )
 
 
@@ -312,6 +335,93 @@ def health_check():
         "message": "healthy",
         "data": {"status": "ok", "database": "MySQL"}
     })
+
+
+@app.route("/verification/send-email", methods=["POST"])
+def send_email_verification():
+    data = request.get_json()
+    email = data.get("email")
+
+    if not email:
+        return jsonify({
+            "code": 400,
+            "message": "邮箱不能为空",
+            "data": None
+        }), 400
+
+    result = verification_service.send_email_code(email)
+
+    if result["success"]:
+        return jsonify({
+            "code": 200,
+            "message": result["message"],
+            "data": result["data"]
+        })
+    else:
+        return jsonify({
+            "code": 400,
+            "message": result["message"],
+            "data": None
+        }), 400
+
+
+@app.route("/verification/send-sms", methods=["POST"])
+def send_sms_verification():
+    data = request.get_json()
+    phone = data.get("phone")
+
+    if not phone:
+        return jsonify({
+            "code": 400,
+            "message": "手机号不能为空",
+            "data": None
+        }), 400
+
+    result = verification_service.send_sms_code(phone)
+
+    if result["success"]:
+        return jsonify({
+            "code": 200,
+            "message": result["message"],
+            "data": result["data"]
+        })
+    else:
+        return jsonify({
+            "code": 400,
+            "message": result["message"],
+            "data": None
+        }), 400
+
+
+@app.route("/verification/verify", methods=["POST"])
+def verify_code():
+    data = request.get_json()
+    user_id = data.get("user_id")
+    code = data.get("code")
+    code_type = data.get("type")
+    target = data.get("target")
+
+    if not all([user_id, code, code_type, target]):
+        return jsonify({
+            "code": 400,
+            "message": "参数不完整",
+            "data": None
+        }), 400
+
+    result = verification_service.verify_code(user_id, code, code_type, target)
+
+    if result["success"]:
+        return jsonify({
+            "code": 200,
+            "message": result["message"],
+            "data": result["data"]
+        })
+    else:
+        return jsonify({
+            "code": 400,
+            "message": result["message"],
+            "data": None
+        }), 400
 
 
 if __name__ == "__main__":
