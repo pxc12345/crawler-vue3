@@ -1,6 +1,7 @@
 @echo off
+chcp 65001 >nul
 echo ====================================
-echo   学生管理系统启动脚本
+echo   用户登录系统后端 - Flask
 echo ====================================
 echo.
 
@@ -28,12 +29,12 @@ echo ====================================
 echo   启动API服务...
 echo ====================================
 echo.
-echo 访问地址: http://127.0.0.1:5000
-echo API文档: http://127.0.0.1:5000/health
+echo 后端地址: http://127.0.0.1:5000
+echo 健康检查: http://127.0.0.1:5000/api/health
 echo.
 echo 按 Ctrl+C 停止服务
 echo.
 
-python app_db.py
+python auth_server.py
 
 pause

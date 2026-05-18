@@ -1,7 +1,7 @@
 @echo off
 chcp 65001 >nul
 echo ====================================
-echo   学生管理系统前端 - Vue3
+echo   用户登录系统前端 - Vue3
 echo ====================================
 echo.
 
@@ -29,10 +29,10 @@ echo ====================================
 echo   启动开发服务器...
 echo ====================================
 echo.
-echo 前端地址: http://localhost:3000
+echo 前端地址: http://localhost:5173
 echo 后端地址: http://127.0.0.1:5000
 echo.
-echo 确保后端已启动 (python ^.\..\python\app.py)
+echo 确保后端已启动 (python ^.\..\python\auth_server.py)
 echo.
 echo 按 Ctrl+C 停止服务
 echo.

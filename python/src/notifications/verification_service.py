@@ -2,23 +2,21 @@ import random
 import string
 from datetime import datetime, timedelta
 from src.notification_db import notification_db
-from src.notifications.email_sender import EmailSender
-from src.notifications.sms_sender import SmsSender
 
 
 class VerificationService:
     CODE_LENGTH = 6
     CODE_EXPIRE_MINUTES = 5
 
-    def __init__(self, email_sender: EmailSender = None, sms_sender: SmsSender = None):
+    def __init__(self, email_sender=None, sms_sender=None):
         self.email_sender = email_sender
         self.sms_sender = sms_sender
         self.db = notification_db
 
-    def set_email_sender(self, email_sender: EmailSender):
+    def set_email_sender(self, email_sender):
         self.email_sender = email_sender
 
-    def set_sms_sender(self, sms_sender: SmsSender):
+    def set_sms_sender(self, sms_sender):
         self.sms_sender = sms_sender
 
     def _generate_code(self) -> str:

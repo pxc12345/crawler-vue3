@@ -19,9 +19,13 @@ class NotificationDB:
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS users (
                     id INT PRIMARY KEY AUTO_INCREMENT,
+                    username VARCHAR(100) UNIQUE,
                     email VARCHAR(255) UNIQUE,
                     phone VARCHAR(20) UNIQUE,
-                    password_hash VARCHAR(255),
+                    password_hash VARCHAR(255) NOT NULL,
+                    login_attempts INT DEFAULT 0,
+                    locked_until DATETIME,
+                    last_login_at DATETIME,
                     created_at DATETIME,
                     updated_at DATETIME
                 )
@@ -38,6 +42,38 @@ class NotificationDB:
                     used TINYINT(1) DEFAULT 0,
                     created_at DATETIME,
                     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+                )
+            """)
+
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS token_blacklist (
+                    id INT PRIMARY KEY AUTO_INCREMENT,
+                    token VARCHAR(500) NOT NULL UNIQUE,
+                    expires_at DATETIME NOT NULL,
+                    created_at DATETIME
+                )
+            """)
+
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS password_history (
+                    id INT PRIMARY KEY AUTO_INCREMENT,
+                    user_id INT NOT NULL,
+                    password_hash VARCHAR(255) NOT NULL,
+                    created_at DATETIME,
+                    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+                )
+            """)
+
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS audit_logs (
+                    id INT PRIMARY KEY AUTO_INCREMENT,
+                    user_id INT,
+                    action VARCHAR(50) NOT NULL,
+                    ip_address VARCHAR(50),
+                    user_agent VARCHAR(255),
+                    details TEXT,
+                    created_at DATETIME,
+                    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
                 )
             """)
             self.connection.commit()
@@ -122,17 +158,154 @@ class NotificationDB:
 
     def get_user_by_id(self, user_id):
         with self.connection.cursor() as cursor:
-            cursor.execute("SELECT id, email, phone, password_hash, created_at FROM users WHERE id = %s", (user_id,))
+            cursor.execute("SELECT id, username, email, phone, password_hash, login_attempts, locked_until, last_login_at, created_at FROM users WHERE id = %s", (user_id,))
             row = cursor.fetchone()
             if row:
                 return {
                     "id": row[0],
-                    "email": row[1],
-                    "phone": row[2],
-                    "password_hash": row[3],
-                    "created_at": row[4]
+                    "username": row[1],
+                    "email": row[2],
+                    "phone": row[3],
+                    "password_hash": row[4],
+                    "login_attempts": row[5],
+                    "locked_until": row[6],
+                    "last_login_at": row[7],
+                    "created_at": row[8]
                 }
             return None
+
+    def get_user_by_username(self, username):
+        with self.connection.cursor() as cursor:
+            cursor.execute("SELECT id, username, email, phone, password_hash, login_attempts, locked_until, last_login_at, created_at FROM users WHERE username = %s", (username,))
+            row = cursor.fetchone()
+            if row:
+                return {
+                    "id": row[0],
+                    "username": row[1],
+                    "email": row[2],
+                    "phone": row[3],
+                    "password_hash": row[4],
+                    "login_attempts": row[5],
+                    "locked_until": row[6],
+                    "last_login_at": row[7],
+                    "created_at": row[8]
+                }
+            return None
+
+    def get_user_by_email_or_username(self, identifier):
+        with self.connection.cursor() as cursor:
+            cursor.execute("""
+                SELECT id, username, email, phone, password_hash, login_attempts, locked_until, last_login_at, created_at 
+                FROM users 
+                WHERE email = %s OR username = %s
+            """, (identifier, identifier))
+            row = cursor.fetchone()
+            if row:
+                return {
+                    "id": row[0],
+                    "username": row[1],
+                    "email": row[2],
+                    "phone": row[3],
+                    "password_hash": row[4],
+                    "login_attempts": row[5],
+                    "locked_until": row[6],
+                    "last_login_at": row[7],
+                    "created_at": row[8]
+                }
+            return None
+
+    def update_user_password(self, user_id, password_hash):
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                "UPDATE users SET password_hash = %s, updated_at = %s WHERE id = %s",
+                (password_hash, now, user_id)
+            )
+            self.connection.commit()
+
+    def increment_login_attempts(self, user_id):
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                "UPDATE users SET login_attempts = login_attempts + 1, updated_at = %s WHERE id = %s",
+                (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), user_id)
+            )
+            self.connection.commit()
+
+    def reset_login_attempts(self, user_id):
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                "UPDATE users SET login_attempts = 0, locked_until = NULL, updated_at = %s WHERE id = %s",
+                (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), user_id)
+            )
+            self.connection.commit()
+
+    def lock_user(self, user_id, lock_until):
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                "UPDATE users SET locked_until = %s, updated_at = %s WHERE id = %s",
+                (lock_until.strftime("%Y-%m-%d %H:%M:%S"), datetime.now().strftime("%Y-%m-%d %H:%M:%S"), user_id)
+            )
+            self.connection.commit()
+
+    def update_last_login(self, user_id):
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                "UPDATE users SET last_login_at = %s, updated_at = %s WHERE id = %s",
+                (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), datetime.now().strftime("%Y-%m-%d %H:%M:%S"), user_id)
+            )
+            self.connection.commit()
+
+    def add_token_to_blacklist(self, token, expires_at):
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                "INSERT INTO token_blacklist (token, expires_at, created_at) VALUES (%s, %s, %s)",
+                (token, expires_at.strftime("%Y-%m-%d %H:%M:%S"), now)
+            )
+            self.connection.commit()
+
+    def is_token_blacklisted(self, token):
+        with self.connection.cursor() as cursor:
+            cursor.execute("SELECT id FROM token_blacklist WHERE token = %s AND expires_at > %s", (token, datetime.now()))
+            return cursor.fetchone() is not None
+
+    def add_password_history(self, user_id, password_hash):
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                "INSERT INTO password_history (user_id, password_hash, created_at) VALUES (%s, %s, %s)",
+                (user_id, password_hash, now)
+            )
+            self.connection.commit()
+
+    def get_password_history(self, user_id, limit=5):
+        with self.connection.cursor() as cursor:
+            cursor.execute("""
+                SELECT password_hash FROM password_history 
+                WHERE user_id = %s 
+                ORDER BY created_at DESC 
+                LIMIT %s
+            """, (user_id, limit))
+            return [row[0] for row in cursor.fetchall()]
+
+    def add_audit_log(self, user_id, action, ip_address=None, user_agent=None, details=None):
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                "INSERT INTO audit_logs (user_id, action, ip_address, user_agent, details, created_at) VALUES (%s, %s, %s, %s, %s, %s)",
+                (user_id, action, ip_address, user_agent, details, now)
+            )
+            self.connection.commit()
+
+    def create_user_with_username(self, username, email=None, phone=None, password_hash=None):
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                "INSERT INTO users (username, email, phone, password_hash, created_at, updated_at) VALUES (%s, %s, %s, %s, %s, %s)",
+                (username, email, phone, password_hash, now, now)
+            )
+            self.connection.commit()
+            return cursor.lastrowid
 
 
 notification_db = NotificationDB()
