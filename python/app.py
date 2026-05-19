@@ -1,18 +1,27 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, Response
 from flask_cors import CORS
 from src.auth_service import auth_service
 from src.notification_db import notification_db
 from src.notifications.verification_service import verification_service
+from crawler_engine import crawler_engine
+from crawler_db import crawler_db
 import re
+import csv
+import io
 
 app = Flask(__name__)
 CORS(app, resources={
     r"/api/*": {
-        "origins": ["http://localhost:5173", "http://127.0.0.1:5173"],
+        "origins": [
+            "http://localhost:5173", "http://127.0.0.1:5173",
+            "http://localhost:3000", "http://127.0.0.1:3000"
+        ],
         "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
         "allow_headers": ["Content-Type", "Authorization"]
     }
 })
+
+crawler_db.connect()
 
 
 def is_valid_email(email):
@@ -279,10 +288,177 @@ def get_profile():
         return jsonify({'success': False, 'message': '获取用户信息失败', 'code': 'GET_PROFILE_FAILED', 'error': str(e)}), 500
 
 
+def _save_crawled_data(items):
+    """爬虫数据保存回调函数，供爬虫引擎调用"""
+    return crawler_db.save_batch(items)
+
+
+@app.route('/api/crawler/start', methods=['POST'])
+def crawler_start():
+    """启动爬虫任务"""
+    try:
+        data = request.get_json()
+        target_url = (data.get('target_url') or '').strip()
+        total_pages = data.get('total_pages', 1)
+        interval_seconds = data.get('interval_seconds', 3)
+        crawl_mode = (data.get('crawl_mode') or 'link').strip().lower()
+
+        if not target_url:
+            return jsonify({
+                'success': False, 'message': '请输入目标网址', 'code': 'MISSING_URL'
+            }), 400
+
+        if not target_url.startswith(('http://', 'https://')):
+            return jsonify({
+                'success': False, 'message': '请输入有效的网址（以 http:// 或 https:// 开头）', 'code': 'INVALID_URL'
+            }), 400
+
+        if not isinstance(total_pages, int) or total_pages < 1 or total_pages > 100:
+            return jsonify({
+                'success': False, 'message': '爬取页数需在 1-100 之间', 'code': 'INVALID_PAGES'
+            }), 400
+
+        if not isinstance(interval_seconds, (int, float)) or interval_seconds < 1 or interval_seconds > 60:
+            return jsonify({
+                'success': False, 'message': '请求间隔需在 1-60 秒之间', 'code': 'INVALID_INTERVAL'
+            }), 400
+
+        # 验证爬取模式
+        valid_modes = ['link', 'image', 'mixed']
+        if crawl_mode not in valid_modes:
+            return jsonify({
+                'success': False, 'message': f'爬取模式必须是 {", ".join(valid_modes)} 之一', 'code': 'INVALID_MODE'
+            }), 400
+
+        success, message = crawler_engine.start(
+            target_url, total_pages, int(interval_seconds), _save_crawled_data, crawl_mode
+        )
+        return jsonify({'success': success, 'message': message}), 200 if success else 400
+
+    except Exception as e:
+        return jsonify({
+            'success': False, 'message': '启动爬虫失败', 'code': 'START_FAILED', 'error': str(e)
+        }), 500
+
+
+@app.route('/api/crawler/stop', methods=['POST'])
+def crawler_stop():
+    """停止爬虫任务"""
+    try:
+        success, message = crawler_engine.stop()
+        if not success:
+            crawler_engine.reset()
+        return jsonify({'success': success, 'message': message}), 200 if success else 400
+
+    except Exception as e:
+        return jsonify({
+            'success': False, 'message': '停止爬虫失败', 'code': 'STOP_FAILED', 'error': str(e)
+        }), 500
+
+
+@app.route('/api/crawler/status', methods=['GET'])
+def crawler_status():
+    """获取爬虫运行状态"""
+    try:
+        status = crawler_engine.get_status()
+        return jsonify({'success': True, 'data': status}), 200
+
+    except Exception as e:
+        return jsonify({
+            'success': False, 'message': '获取状态失败', 'code': 'STATUS_FAILED', 'error': str(e)
+        }), 500
+
+
+@app.route('/api/crawler/data', methods=['GET'])
+def crawler_data_list():
+    """分页查询爬取数据列表"""
+    try:
+        page = request.args.get('page', 1, type=int)
+        page_size = request.args.get('page_size', 20, type=int)
+        keyword = request.args.get('keyword', '', type=str)
+
+        if page < 1:
+            page = 1
+        if page_size < 1 or page_size > 100:
+            page_size = 20
+
+        rows, total = crawler_db.get_list(page=page, page_size=page_size, keyword=keyword)
+
+        return jsonify({
+            'success': True,
+            'data': {
+                'list': rows,
+                'total': total,
+                'page': page,
+                'page_size': page_size
+            }
+        }), 200
+
+    except Exception as e:
+        return jsonify({
+            'success': False, 'message': '查询数据失败', 'code': 'QUERY_FAILED', 'error': str(e)
+        }), 500
+
+
+@app.route('/api/crawler/data', methods=['DELETE'])
+def crawler_data_clear():
+    """清空所有爬取数据"""
+    try:
+        success, message = crawler_db.clear_all()
+        crawler_engine.reset()
+        return jsonify({'success': success, 'message': message}), 200 if success else 500
+
+    except Exception as e:
+        return jsonify({
+            'success': False, 'message': '清空数据失败', 'code': 'CLEAR_FAILED', 'error': str(e)
+        }), 500
+
+
+@app.route('/api/crawler/export', methods=['GET'])
+def crawler_data_export():
+    """导出爬取数据为 CSV 文件"""
+    try:
+        rows = crawler_db.get_all()
+
+        if not rows:
+            return jsonify({
+                'success': False, 'message': '暂无数据可导出', 'code': 'NO_DATA'
+            }), 400
+
+        output = io.StringIO()
+        writer = csv.writer(output)
+        writer.writerow(['ID', '标题', '链接', '内容摘要', '来源网址', '页码', '采集时间'])
+        for row in rows:
+            writer.writerow([
+                row.get('id', ''),
+                row.get('title', ''),
+                row.get('link', ''),
+                row.get('content', ''),
+                row.get('source_url', ''),
+                row.get('page_number', ''),
+                row.get('collected_at', '')
+            ])
+
+        output.seek(0)
+        return Response(
+            output.getvalue().encode('utf-8-sig'),
+            mimetype='text/csv',
+            headers={
+                'Content-Disposition': 'attachment; filename=crawler_data_export.csv',
+                'Content-Type': 'text/csv; charset=utf-8-sig'
+            }
+        )
+
+    except Exception as e:
+        return jsonify({
+            'success': False, 'message': '导出数据失败', 'code': 'EXPORT_FAILED', 'error': str(e)
+        }), 500
+
+
 @app.route('/api/health', methods=['GET'])
 def health_check():
     return jsonify({'success': True, 'message': 'Server is running'}), 200
 
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    app.run(host='0.0.0.0', port=5000, debug=False)
