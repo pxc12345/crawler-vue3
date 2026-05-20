@@ -1,7 +1,8 @@
 @echo off
 chcp 65001 >nul
 echo ====================================
-echo   用户登录系统后端 - Flask
+echo   可视化爬虫管理系统 - Flask后端
+echo   (用户认证 + 爬虫管理 统一服务)
 echo ====================================
 echo.
 
@@ -26,15 +27,20 @@ if errorlevel 1 (
 
 echo.
 echo ====================================
-echo   启动API服务...
+echo   启动统一API服务...
 echo ====================================
 echo.
 echo 后端地址: http://127.0.0.1:5000
 echo 健康检查: http://127.0.0.1:5000/api/health
 echo.
+echo [功能模块]
+echo   - 用户认证 (登录/注册/密码管理)
+echo   - 个人信息管理
+echo   - 可视化爬虫管理
+echo.
 echo 按 Ctrl+C 停止服务
 echo.
 
-python auth_server.py
+python app.py
 
 pause

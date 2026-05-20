@@ -1,6 +1,6 @@
-# 用户登录系统 - 完整实现
+# 可视化爬虫管理系统
 
-基于Python Flask + Vue3的完整用户认证系统，包含登录、注册、忘记密码等功能。
+基于Python Flask + Vue3的可视化爬虫管理系统，包含用户认证、个人信息管理和爬虫功能。
 
 ## 技术栈
 
@@ -34,6 +34,12 @@
 ✅ 安全审计日志
 ✅ 密码历史记录（防止重复使用）
 ✅ 统一API响应格式
+✅ **可视化爬虫管理**
+✅ **支持链接/图片/混合爬取模式**
+✅ **多线程爬取控制**
+✅ **反爬策略（User-Agent伪装、重试机制）**
+✅ **数据去重**
+✅ **CSV数据导出**
 
 ### 前端功能
 ✅ 响应式登录页面
@@ -48,6 +54,11 @@
 ✅ 登录状态保持
 ✅ 自动Token刷新
 ✅ 路由守卫
+✅ **爬虫管理界面**
+✅ **实时爬取状态显示**
+✅ **图片预览**
+✅ **数据分页查询**
+✅ **数据一键导出**
 
 ## 项目结构
 
@@ -61,30 +72,27 @@ c:\test\
 │   │   │   └── sms_sender.py
 │   │   ├── auth_service.py      # 认证服务
 │   │   └── notification_db.py   # 数据库操作
-│   ├── auth_server.py           # Flask应用入口
+│   ├── app.py                   # 统一服务入口（含认证+爬虫）
+│   ├── auth_server.py           # 独立认证服务（历史版本）
+│   ├── crawler_engine.py        # 爬虫引擎核心
+│   ├── crawler_db.py            # 爬虫数据库操作
 │   ├── requirements.txt         # Python依赖
-│   └── ...
+│   └── start.bat                # Windows启动脚本
 │
 └── python-web\                  # 前端服务
     ├── src\
     │   ├── api\                 # API客户端
-    │   │   └── index.js
+    │   │   ├── index.js         # Axios配置
+    │   │   ├── auth.js           # 认证API
+    │   │   └── crawler.js        # 爬虫API
     │   ├── stores\              # Pinia状态管理
     │   │   └── auth.js
-    │   ├── router\              # Vue Router
-    │   │   └── index.js
     │   ├── views\               # 页面组件
     │   │   ├── Login.vue
     │   │   ├── Register.vue
-    │   │   ├── ForgotPassword.vue
-    │   │   ├── ResetPassword.vue
-    │   │   ├── Home.vue
-    │   │   └── Profile.vue
-    │   ├── App.vue
-    │   ├── main.js
-    │   └── style.css
-    ├── package.json
-    ├── vite.config.js
+    │   │   ├── Crawler.vue      # 爬虫管理页面
+    │   │   └── ...
+    │   └── ...
     └── ...
 ```
 
@@ -106,14 +114,23 @@ pip install -r requirements.txt
 - password: Pxc7890.
 - database: school_db
 
-### 3. 启动后端服务
+### 3. 启动后端服务（统一入口）
+
+**重要：只需运行一个文件即可启动所有功能（用户认证 + 爬虫管理）**
 
 ```bash
 cd python
-python auth_server.py
+python app.py
 ```
 
+或者直接双击运行 `start.bat`
+
 后端服务将在 http://localhost:5000 启动
+
+**服务功能说明：**
+- 用户认证（登录/注册/密码管理）
+- 个人信息管理
+- 可视化爬虫管理
 
 ### 4. 安装前端依赖
 
@@ -151,6 +168,25 @@ npm run dev
 | 接口 | 方法 | 描述 | 认证 |
 |------|------|------|------|
 | `/api/user/profile` | GET | 获取用户信息 | 是 |
+
+### 爬虫接口
+
+| 接口 | 方法 | 描述 | 认证 |
+|------|------|------|------|
+| `/api/crawler/start` | POST | 启动爬虫 | 否 |
+| `/api/crawler/stop` | POST | 停止爬虫 | 否 |
+| `/api/crawler/status` | GET | 获取爬虫状态 | 否 |
+| `/api/crawler/data` | GET | 分页查询爬取数据 | 否 |
+| `/api/crawler/data` | DELETE | 清空所有数据 | 否 |
+| `/api/crawler/export` | GET | 导出数据为CSV | 否 |
+
+### 爬虫爬取模式
+
+| 模式 | 说明 |
+|------|------|
+| `link` | 只爬取网页链接 |
+| `image` | 只爬取图片 |
+| `mixed` | 同时爬取链接和图片（推荐） |
 
 ### 统一响应格式
 
@@ -208,6 +244,17 @@ npm run dev
 - details: 详细信息
 - created_at: 创建时间
 
+### crawler_data（爬虫数据表）
+- id: 主键
+- title: 标题
+- link: 链接地址
+- image_url: 图片URL地址
+- content: 正文内容摘要
+- source_url: 来源网址
+- page_number: 爬取页码
+- type: 数据类型（link/image/page）
+- collected_at: 采集时间
+
 ## 安全特性
 
 1. **密码安全**
@@ -262,13 +309,35 @@ npm run dev
 ### 后端扩展
 - 修改 `auth_service.py` 中的配置可调整安全策略
 - 在 `notification_db.py` 中添加新的数据库操作
-- 在 `auth_server.py` 中添加新的API端点
+- 在 `app.py` 中添加新的API端点
+- 修改 `crawler_engine.py` 可自定义爬虫解析逻辑
 
 ### 前端扩展
 - 在 `views/` 目录中添加新页面
 - 在 `router/index.js` 中配置路由
 - 在 `stores/auth.js` 中管理认证状态
-- 在 `api/index.js` 中添加API调用
+- 在 `api/` 中添加API调用
+
+## 爬虫使用说明
+
+### 启动爬虫
+1. 在爬虫管理页面输入目标网址
+2. 选择爬取模式（链接/图片/混合）
+3. 设置爬取页数和间隔时间
+4. 点击"开始爬取"
+
+### 查看结果
+1. 爬取完成后在数据列表查看
+2. 图片类型数据会显示缩略图预览
+3. 支持关键词搜索
+4. 支持导出CSV文件
+
+### 爬虫特性
+- 多线程爬取，支持随时停止
+- 自动去重，避免重复数据
+- 支持多种懒加载图片提取
+- CSS背景图提取
+- 403错误自动重试
 
 ## 注意事项
 
