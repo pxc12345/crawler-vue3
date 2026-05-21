@@ -24,14 +24,19 @@ class NotificationDB:
             print(f"Database connection error: {e}")
             raise
 
-    def _ensure_connection(self):
+    def _ensure_connection(self, retry_count=0, max_retries=3):
         try:
             if self.connection is None or not self.connection.open:
                 self._connect()
             else:
                 self.connection.ping(reconnect=True)
         except Exception:
-            self._connect()
+            if retry_count < max_retries:
+                import time
+                time.sleep(0.5 * (retry_count + 1))
+                self._ensure_connection(retry_count + 1, max_retries)
+            else:
+                raise
 
     def _init_db(self):
         self._ensure_connection()
