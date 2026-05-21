@@ -1,3 +1,4 @@
+import time
 import pymysql
 from datetime import datetime
 
@@ -32,7 +33,6 @@ class NotificationDB:
                 self.connection.ping(reconnect=True)
         except Exception:
             if retry_count < max_retries:
-                import time
                 time.sleep(0.5 * (retry_count + 1))
                 self._ensure_connection(retry_count + 1, max_retries)
             else:
