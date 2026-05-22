@@ -158,6 +158,9 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
+import { ElMessage } from 'element-plus'
+import { dataAPI } from '../api/data'
+import api from '../api/index'
 import NavBar from '../components/NavBar.vue'
 
 const loading = ref(true)
@@ -211,7 +214,7 @@ const filteredData = computed(() => {
   let result = [...rawData.value]
   if (filters.value.keyword) {
     const kw = filters.value.keyword.toLowerCase()
-    result = result.filter(r => r.title.toLowerCase().includes(kw) || r.content.toLowerCase().includes(kw))
+    result = result.filter(r => (r.title || '').toLowerCase().includes(kw) || (r.content || '').toLowerCase().includes(kw))
   }
   if (filters.value.dateFrom) {
     result = result.filter(r => r.collected_at >= filters.value.dateFrom)
@@ -226,7 +229,7 @@ const filteredData = computed(() => {
     result.sort((a, b) => {
       const va = a[sortKey.value] || ''
       const vb = b[sortKey.value] || ''
-      const cmp = va.localeCompare(vb)
+      const cmp = String(va).localeCompare(String(vb))
       return sortDir.value === 'asc' ? cmp : -cmp
     })
   }
@@ -260,40 +263,44 @@ function handleFilter() {
   currentPage.value = 1
 }
 
-function handleExport(format) {
+async function handleExport(format) {
   showExportOptions.value = false
-  ElMessage.success(`已导出 ${format.toUpperCase()} 格式，共 ${totalFiltered.value} 条数据`)
+  try {
+    const exportUrl = api.defaults.baseURL + '/data/export?format=' + format
+    window.open(exportUrl)
+    ElMessage.success(`正在导出 ${format.toUpperCase()} 格式，共 ${totalFiltered.value} 条数据`)
+  } catch (error) {
+    ElMessage.error('导出失败，请重试')
+  }
 }
 
-function loadData() {
+async function loadData() {
   loading.value = true
-  setTimeout(() => {
-    rawData.value = [
-      { id: 1, title: '2024年Q2季度智能手机市场分析报告', link: 'https://example.com/report/q2-phones', content: '最新数据显示，2024年第二季度全球智能手机出货量同比增长6.5%，5G手机占比首次突破80%...', type: 'link', source_url: 'https://research.example.com/mobile', collected_at: '2024-06-15 14:30:22' },
-      { id: 2, title: '新能源汽车补贴政策调整解读', link: 'https://example.com/news/ev-subsidy', content: '财政部联合工信部发布最新新能源汽车补贴方案，纯电续航400公里以上车型补贴额度上调15%...', type: 'link', source_url: 'https://gov.example.com/policy', collected_at: '2024-06-15 13:22:10' },
-      { id: 3, title: '产品展示图 - 旗舰款', link: 'https://cdn.example.com/imgs/prod-flagship.jpg', content: '1920x1080高清产品展示图，包含多角度外观及规格参数标注', type: 'image', source_url: 'https://shop.example.com/products/flagship', collected_at: '2024-06-15 12:08:45' },
-      { id: 4, title: '深度学习框架PyTorch 2.4正式发布', link: 'https://example.com/tech/pytorch-2.4', content: 'PyTorch 2.4版本带来全新torch.compile优化，训练速度平均提升40%，并新增分布式训练API...', type: 'link', source_url: 'https://dev.example.com/ml', collected_at: '2024-06-15 11:44:33' },
-      { id: 5, title: '长三角地区房价走势月度数据', link: 'https://example.com/data/housing-yrd', content: '上海、杭州、南京、苏州四城新建商品住宅价格指数环比上涨0.3%-1.2%，二手房市场成交量回暖...', type: 'link', source_url: 'https://stats.example.com/realestate', collected_at: '2024-06-15 10:15:00' },
-      { id: 6, title: '品牌LOGO矢量图合集', link: 'https://cdn.example.com/assets/brand-logos.zip', content: '包含50个主流科技品牌SVG格式矢量LOGO，支持无损缩放', type: 'image', source_url: 'https://brands.example.com/resources', collected_at: '2024-06-15 09:30:12' },
-      { id: 7, title: 'AI大模型应用落地实践白皮书', link: 'https://example.com/reports/ai-llm-practice', content: '调研了200+企业AI落地案例，总结出6大行业12个典型场景的最佳实践路径...', type: 'link', source_url: 'https://ai.example.com/whitepaper', collected_at: '2024-06-14 18:22:44' },
-      { id: 8, title: '春季新品发布会现场图集', link: 'https://cdn.example.com/photos/spring-launch-001.jpg', content: '春季新品发布会高清现场图集，共48张照片', type: 'image', source_url: 'https://events.example.com/spring2024', collected_at: '2024-06-14 17:10:33' },
-      { id: 9, title: '跨境支付合规指南2024版', link: 'https://example.com/guides/cross-border-payment', content: '面向跨境电商企业的支付合规手册，涵盖主要市场的监管要求和操作规范...', type: 'link', source_url: 'https://fintech.example.com/compliance', collected_at: '2024-06-14 16:05:21' },
-      { id: 10, title: '云原生架构实践：K8s集群优化方案', link: 'https://example.com/tech/k8s-optimization', content: '针对大规模Kubernetes集群的性能调优方案，包括调度策略优化、资源配额管理和自动伸缩配置...', type: 'link', source_url: 'https://cloud.example.com/blog', collected_at: '2024-06-14 15:00:00' },
-      { id: 11, title: '竞品价格监测截图包', link: 'https://cdn.example.com/screenshots/competitor-202406.zip', content: '包含15家竞品平台6月份价格监测截图，共计320张', type: 'image', source_url: 'https://monitor.example.com/competitor', collected_at: '2024-06-14 14:22:18' },
-      { id: 12, title: '电商双十一大促策略分析', link: 'https://example.com/insights/double11-strategy', content: '基于历年双十一数据的促销策略分析，预测今年热门品类和用户消费趋势...', type: 'link', source_url: 'https://ecommerce.example.com/research', collected_at: '2024-06-14 13:11:05' }
-    ]
+  try {
+    const res = await dataAPI.getDataList({
+      page: currentPage.value,
+      page_size: pageSize,
+      keyword: filters.value.keyword || undefined,
+      type: filters.value.type !== 'all' ? filters.value.type : undefined,
+      sort_field: sortKey.value || undefined,
+      sort_order: sortDir.value || undefined
+    })
+    if (res.data.success) {
+      rawData.value = res.data.data.list || res.data.data || []
+    } else {
+      rawData.value = []
+    }
+  } catch (error) {
+    ElMessage.error('加载数据失败')
+    rawData.value = []
+  } finally {
     loading.value = false
-  }, 600)
+  }
 }
 
 onMounted(() => {
   loadData()
 })
-</script>
-
-<script>
-import { ElMessage } from 'element-plus'
-export default { name: 'DataPreview' }
 </script>
 
 <style scoped>

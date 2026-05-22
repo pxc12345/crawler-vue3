@@ -49,8 +49,8 @@ export const taskAPI = {
     return api.get(`/tasks/${taskId}/versions`)
   },
 
-  rollbackVersion(taskId, versionIndex) {
-    return api.post(`/tasks/${taskId}/versions/${versionIndex}/rollback`)
+  rollbackVersion(taskId, versionId) {
+    return api.post(`/tasks/${taskId}/versions/rollback`, { version_id: versionId })
   },
 
   getFavorites() {
@@ -63,5 +63,9 @@ export const taskAPI = {
 
   removeFavorite(taskId) {
     return api.delete(`/tasks/${taskId}/favorite`)
+  },
+
+  restartFailedTasks() {
+    return api.post('/tasks/restart-failed')
   }
 }

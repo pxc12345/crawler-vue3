@@ -13,11 +13,23 @@ export const systemAPI = {
     return api.get('/system/resources')
   },
 
+  getDashboardStats() {
+    return api.get('/system/dashboard-stats')
+  },
+
   getSettings() {
     return api.get('/system/settings')
   },
 
   updateSetting(key, data) {
     return api.put(`/system/settings/${key}`, data)
+  },
+
+  getUserPreferences() {
+    return api.get('/system/user/preferences')
+  },
+
+  saveUserPreferences(data) {
+    return api.put('/system/user/preferences', data)
   }
 }

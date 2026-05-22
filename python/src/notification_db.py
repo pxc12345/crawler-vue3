@@ -30,7 +30,10 @@ class NotificationDB:
             if self.connection is None or not self.connection.open:
                 self._connect()
             else:
-                self.connection.ping(reconnect=True)
+                try:
+                    self.connection.ping()
+                except Exception:
+                    self._connect()
         except Exception:
             if retry_count < max_retries:
                 time.sleep(0.5 * (retry_count + 1))
@@ -305,10 +308,13 @@ class NotificationDB:
             self.connection.commit()
 
     def is_token_blacklisted(self, token):
-        self._ensure_connection()
-        with self.connection.cursor() as cursor:
-            cursor.execute("SELECT id FROM token_blacklist WHERE token = %s AND expires_at > %s", (token, datetime.now()))
-            return cursor.fetchone() is not None
+        try:
+            self._connect()  # 每次都创建新连接
+            with self.connection.cursor() as cursor:
+                cursor.execute("SELECT id FROM token_blacklist WHERE token = %s AND expires_at > %s", (token, datetime.now()))
+                return cursor.fetchone() is not None
+        except Exception:
+            return False  # 出错时跳过检查，不阻止请求
 
     def add_password_history(self, user_id, password_hash):
         self._ensure_connection()

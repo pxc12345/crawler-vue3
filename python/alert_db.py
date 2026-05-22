@@ -277,7 +277,7 @@ class AlertDB:
             if conn:
                 conn.close()
 
-    def mark_as_read(self, record_id):
+    def _mark_as_read_internal(self, record_id):
         conn = None
         try:
             conn = pymysql.connect(**self._config)
@@ -294,7 +294,10 @@ class AlertDB:
             if conn:
                 conn.close()
 
-    def get_unread_count(self):
+    def mark_as_read(self, alert_id, user_id=0):
+        return self._mark_as_read_internal(alert_id)
+
+    def get_unread_count(self, user_id=0):
         conn = None
         try:
             conn = pymysql.connect(**self._config)
@@ -309,6 +312,79 @@ class AlertDB:
         finally:
             if conn:
                 conn.close()
+
+    def mark_all_as_read(self, user_id=0):
+        conn = None
+        try:
+            conn = pymysql.connect(**self._config)
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    "UPDATE `alert_records` SET `is_read` = 1 WHERE `is_read` = 0"
+                )
+            conn.commit()
+            return True, None
+        except pymysql.Error as e:
+            return False, str(e)
+        finally:
+            if conn:
+                conn.close()
+
+    def get_rules(self, user_id=0):
+        return self.get_alert_rules()
+
+    def get_rule_by_id(self, rule_id, user_id=0):
+        conn = None
+        try:
+            conn = pymysql.connect(**self._config)
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    "SELECT * FROM `alert_rules` WHERE `id` = %(rule_id)s",
+                    {"rule_id": rule_id}
+                )
+                row = cursor.fetchone()
+                if row and row.get("created_at"):
+                    row["created_at"] = row["created_at"].strftime("%Y-%m-%d %H:%M:%S")
+                return row
+        except pymysql.Error as e:
+            print(f"查询告警规则失败: {e}")
+            return None
+        finally:
+            if conn:
+                conn.close()
+
+    def create_rule(self, user_id=0, name="", rule_type="", condition=None, actions=None, is_enabled=True):
+        import json
+        threshold = 0
+        if isinstance(condition, dict):
+            threshold = condition.get("threshold", 0)
+        rule_id, err = self.add_alert_rule(
+            name=name,
+            task_id=0,
+            rule_type=rule_type,
+            threshold=threshold,
+            enabled=1 if is_enabled else 0
+        )
+        if err:
+            return None
+        return rule_id
+
+    def update_rule(self, rule_id, user_id=0, **kwargs):
+        if "is_enabled" in kwargs:
+            kwargs["enabled"] = 1 if kwargs.pop("is_enabled") else 0
+        if "rule_type" in kwargs:
+            kwargs["type"] = kwargs.pop("rule_type")
+        return self.update_alert_rule(rule_id, **kwargs)
+
+    def delete_rule(self, rule_id, user_id=0):
+        return self.delete_alert_rule(rule_id)
+
+    def get_list(self, user_id=0, alert_type="", is_read=None, page=1, page_size=20):
+        return self.get_alert_records(
+            record_type=alert_type,
+            is_read=is_read,
+            page=page,
+            page_size=page_size
+        )
 
 
 alert_db = AlertDB()

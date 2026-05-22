@@ -140,14 +140,14 @@ class TaskDB:
                 if conditions:
                     where = "WHERE " + " AND ".join(conditions)
 
-                count_sql = "SELECT COUNT(*) AS total FROM `crawler_tasks` {}".format(where)
+                count_sql = "SELECT COUNT(*) AS total FROM `crawler_tasks` t {}".format(where)
                 cursor.execute(count_sql, params)
                 total = cursor.fetchone()["total"]
 
                 offset = (page - 1) * page_size
                 list_sql = (
-                    "SELECT * FROM `crawler_tasks` {} "
-                    "ORDER BY `updated_at` DESC "
+                    "SELECT t.* FROM `crawler_tasks` t {} "
+                    "ORDER BY t.`updated_at` DESC "
                     "LIMIT %(limit)s OFFSET %(offset)s"
                 ).format(where)
                 params["limit"] = page_size
@@ -528,6 +528,163 @@ class TaskDB:
         finally:
             if conn:
                 conn.close()
+
+    def update_task_stats(self, task_id, execution_time, data_count, success_rate):
+        conn = None
+        try:
+            conn = pymysql.connect(**self._config)
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    "UPDATE `crawler_tasks` SET `execution_time` = %(execution_time)s, "
+                    "`data_count` = %(data_count)s, `success_rate` = %(success_rate)s WHERE `id` = %(task_id)s",
+                    {"execution_time": execution_time, "data_count": data_count, "success_rate": success_rate, "task_id": task_id}
+                )
+            conn.commit()
+            return True, None
+        except pymysql.Error as e:
+            return False, str(e)
+        finally:
+            if conn:
+                conn.close()
+
+    def get_count_by_status(self, status):
+        conn = None
+        try:
+            conn = pymysql.connect(**self._config)
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    "SELECT COUNT(*) AS total FROM `crawler_tasks` WHERE `status` = %(status)s",
+                    {"status": status}
+                )
+                return cursor.fetchone()["total"]
+        except pymysql.Error:
+            return 0
+        finally:
+            if conn:
+                conn.close()
+
+    def set_all_failed_to_pending(self):
+        conn = None
+        try:
+            conn = pymysql.connect(**self._config)
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    "UPDATE `crawler_tasks` SET `status` = 'pending' WHERE `status` = 'failed'"
+                )
+                affected = cursor.rowcount
+            conn.commit()
+            return affected, None
+        except pymysql.Error as e:
+            return 0, str(e)
+        finally:
+            if conn:
+                conn.close()
+
+    def get_task_list_with_favorites(self, user_id, status="", keyword="", page=1, page_size=20):
+        conn = None
+        try:
+            conn = pymysql.connect(**self._config)
+            with conn.cursor() as cursor:
+                conditions = []
+                params = {"user_id": user_id}
+
+                conditions.append("t.`user_id` = %(user_id)s")
+
+                if keyword:
+                    conditions.append("(`name` LIKE %(keyword)s OR `target_url` LIKE %(keyword)s)")
+                    params["keyword"] = "%{}%".format(keyword)
+
+                if status:
+                    conditions.append("`status` = %(status)s")
+                    params["status"] = status.upper()
+
+                where = ""
+                if conditions:
+                    where = "WHERE " + " AND ".join(conditions)
+
+                count_sql = "SELECT COUNT(*) AS total FROM `crawler_tasks` t {}".format(where)
+                cursor.execute(count_sql, params)
+                total = cursor.fetchone()["total"]
+
+                offset = (page - 1) * page_size
+                list_sql = (
+                    "SELECT t.*, "
+                    "CASE WHEN f.id IS NOT NULL THEN 1 ELSE 0 END AS is_favorite "
+                    "FROM `crawler_tasks` t "
+                    "LEFT JOIN `task_favorites` f ON t.`id` = f.`task_id` AND f.`user_id` = %(user_id)s "
+                    "{} "
+                    "ORDER BY t.`updated_at` DESC "
+                    "LIMIT %(limit)s OFFSET %(offset)s"
+                ).format(where)
+                params["limit"] = page_size
+                params["offset"] = offset
+                cursor.execute(list_sql, params)
+                rows = cursor.fetchall()
+
+                for row in rows:
+                    if row.get("created_at"):
+                        row["created_at"] = row["created_at"].strftime("%Y-%m-%d %H:%M:%S")
+                    if row.get("updated_at"):
+                        row["updated_at"] = row["updated_at"].strftime("%Y-%m-%d %H:%M:%S")
+
+                return rows, total
+        except pymysql.Error as e:
+            print(f"查询任务列表失败: {e}")
+            return [], 0
+        finally:
+            if conn:
+                conn.close()
+
+    def get_list(self, user_id=0, status="", keyword="", page=1, page_size=20):
+        return self.get_task_list_with_favorites(
+            user_id=user_id, status=status, keyword=keyword,
+            page=page, page_size=page_size
+        )
+
+    def get_by_id(self, task_id, user_id=0):
+        return self.get_task_by_id(task_id)
+
+    def start_task(self, task_id, user_id=0):
+        task = self.get_task_by_id(task_id)
+        if not task:
+            return False, "任务不存在"
+        if task.get("status", "").upper() == "RUNNING":
+            return True, "任务已在运行中"
+        return self.update_task_status(task_id, "RUNNING")
+
+    def stop_task(self, task_id, user_id=0):
+        task = self.get_task_by_id(task_id)
+        if not task:
+            return False, "任务不存在"
+        if task.get("status", "").upper() != "RUNNING":
+            return True, "任务未在运行"
+        return self.update_task_status(task_id, "PENDING")
+
+    def create(self, user_id=0, name="", task_type="", config=None, description="", template_id=None):
+        target_url = ""
+        if isinstance(config, dict):
+            target_url = config.get("target_url", "")
+        task_id, err = self.create_task(
+            name=name,
+            target_url=target_url,
+            config=config,
+            user_id=user_id
+        )
+        if err:
+            return None
+        return task_id
+
+    def update(self, task_id, user_id=0, **kwargs):
+        return self.update_task(task_id, **kwargs)
+
+    def delete(self, task_id, user_id=0):
+        return self.delete_task(task_id)
+
+    def get_versions(self, task_id, user_id=0):
+        return self.get_task_versions(task_id)
+
+    def rollback_version(self, task_id, version_id, user_id=0):
+        return self.rollback_version(task_id, version_id)
 
 
 task_db = TaskDB()

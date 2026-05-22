@@ -3,6 +3,7 @@ from bs4 import BeautifulSoup
 import threading
 import time
 import random
+import re
 from datetime import datetime
 from urllib.parse import urljoin, urlparse
 
@@ -50,6 +51,7 @@ class CrawlerEngine:
 
     def __init__(self):
         self._stop_flag = threading.Event()
+        self._task_id = None
         self._crawl_thread = None
         self._status = "idle"
         self._collected_count = 0
@@ -460,8 +462,15 @@ class CrawlerEngine:
                 self._status = "completed"
             self._elapsed_seconds = int(time.time() - self._start_time)
             self._current_page = total_pages
+            # 完成任务后更新数据库状态
+            if self._task_id and db_callback:
+                try:
+                    # 通知外部更新任务状态
+                    db_callback({'type': 'complete', 'task_id': self._task_id, 'status': self._status})
+                except Exception as e:
+                    print(f"[Crawler] Update task status error: {e}")
 
-    def start(self, target_url, total_pages, interval_seconds, db_callback, crawl_mode="link"):
+    def start(self, target_url, total_pages, interval_seconds, db_callback, crawl_mode="link", task_id=None):
         """
         启动爬虫任务
         :param target_url: 目标网址
@@ -469,6 +478,7 @@ class CrawlerEngine:
         :param interval_seconds: 请求间隔（秒）
         :param db_callback: 数据库保存回调函数，接收爬取结果列表
         :param crawl_mode: 爬取模式，可选值: "link"(只爬链接), "image"(只爬图片), "mixed"(混合模式)
+        :param task_id: 任务ID，用于完成后更新数据库
         """
         if self._status == "running":
             return False, "爬虫已在运行中，请先停止当前任务"
@@ -488,6 +498,7 @@ class CrawlerEngine:
         else:
             self._crawl_mode = self.CRAWL_MODE_LINK
 
+        self._task_id = task_id
         self._crawl_thread = threading.Thread(
             target=self._crawl_task,
             args=(target_url, total_pages, interval_seconds, db_callback),

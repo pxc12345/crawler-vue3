@@ -97,6 +97,9 @@
 
 <script setup>
 import { ref, computed, onMounted, nextTick, watch } from 'vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { systemAPI } from '../api/system'
+import api from '../api/index'
 import NavBar from '../components/NavBar.vue'
 
 const activeLevel = ref('ALL')
@@ -116,30 +119,6 @@ const levels = [
 
 const allLogs = ref([])
 
-const logRawData = [
-  { time: '2024-06-15 14:32:01', level: 'INFO', source: 'task-runner', message: '任务 [竞品价格追踪] 开始执行，目标网站: example.com' },
-  { time: '2024-06-15 14:31:58', level: 'INFO', source: 'proxy-pool', message: '代理IP 203.0.113.45:8080 验证通过，延迟: 120ms' },
-  { time: '2024-06-15 14:31:42', level: 'WARNING', source: 'crawler-engine', message: '请求频率接近限制阈值 (95/100 rpm)，自动降低并发数' },
-  { time: '2024-06-15 14:30:55', level: 'INFO', source: 'data-processor', message: '批次 #2048 数据处理完成，入库 1,280 条记录' },
-  { time: '2024-06-15 14:30:33', level: 'ERROR', source: 'crawler-engine', message: '目标站点 https://target.example.com/api/v2 返回 HTTP 503，重试3次后放弃' },
-  { time: '2024-06-15 14:28:17', level: 'INFO', source: 'scheduler', message: '定时任务 [每日新闻采集] 按计划启动' },
-  { time: '2024-06-15 14:27:05', level: 'WARNING', source: 'alert-service', message: '磁盘使用率达到 78%，建议清理过期日志文件' },
-  { time: '2024-06-15 14:25:00', level: 'INFO', source: 'data-cleaner', message: '自动去重完成，移除 45 条重复记录' },
-  { time: '2024-06-15 14:22:30', level: 'INFO', source: 'proxy-pool', message: '代理池自动刷新完成，当前可用IP: 28个' },
-  { time: '2024-06-15 14:20:11', level: 'ERROR', source: 'task-runner', message: '任务 [社交媒体采集] 执行异常: ConnectionResetError - 远程主机强制关闭连接' },
-  { time: '2024-06-15 14:18:44', level: 'INFO', source: 'user-auth', message: '用户 admin 登录成功，IP: 192.168.1.100' },
-  { time: '2024-06-15 14:15:22', level: 'WARNING', source: 'anti-crawl', message: '检测到异常访问模式，任务 [电商采集] 触发目标站点风控' },
-  { time: '2024-06-15 14:12:00', level: 'INFO', source: 'export-service', message: '用户 admin 导出数据 CSV 格式，共 5,200 条' },
-  { time: '2024-06-15 14:08:33', level: 'INFO', source: 'task-runner', message: '任务 [地图POI数据] 执行完毕，3/3页采集完成' },
-  { time: '2024-06-15 14:05:17', level: 'ERROR', source: 'db-connector', message: 'MongoDB连接超时 (30s)，可能原因: 网络延迟或数据库负载过高' },
-  { time: '2024-06-15 14:02:00', level: 'INFO', source: 'system-monitor', message: '系统健康检查通过，CPU: 42%, 内存: 61%, 磁盘: 38%' },
-  { time: '2024-06-15 13:58:29', level: 'WARNING', source: 'crawler-engine', message: 'User-Agent池数量不足，当前仅剩3个未使用的UA' },
-  { time: '2024-06-15 13:55:12', level: 'INFO', source: 'task-runner', message: '任务 [竞品价格追踪] 完成，共采集 850 条商品价格数据' },
-  { time: '2024-06-15 13:50:00', level: 'INFO', source: 'scheduler', message: '系统定时维护任务启动: 清理过期数据、优化索引' },
-  { time: '2024-06-15 13:47:33', level: 'INFO', source: 'proxy-pool', message: '新增代理IP 198.51.100.22:3128 已加入代理池' },
-  { time: '2024-06-15 13:44:08', level: 'ERROR', source: 'anti-crawl', message: 'IP 203.0.113.99 因频率过高被目标站点列入黑名单' },
-]
-
 function levelLabel(level) {
   const map = { INFO: '信息', WARNING: '警告', ERROR: '错误' }
   return map[level] || level
@@ -152,13 +131,13 @@ const filteredLogs = computed(() => {
   }
   if (logSearch.value) {
     const kw = logSearch.value.toLowerCase()
-    result = result.filter(l => l.message.toLowerCase().includes(kw) || l.source.toLowerCase().includes(kw))
+    result = result.filter(l => (l.message || '').toLowerCase().includes(kw) || (l.source || '').toLowerCase().includes(kw))
   }
   if (logDateFrom.value) {
-    result = result.filter(l => l.time.startsWith(logDateFrom.value))
+    result = result.filter(l => l.time && l.time.startsWith(logDateFrom.value))
   }
   if (logDateTo.value) {
-    result = result.filter(l => l.time.startsWith(logDateTo.value) || l.time < logDateTo.value + ' 23:59:59')
+    result = result.filter(l => l.time && (l.time.startsWith(logDateTo.value) || l.time < logDateTo.value + ' 23:59:59'))
   }
   return result
 })
@@ -172,12 +151,12 @@ const paginatedLogs = computed(() => {
 
 const todayLogs = computed(() => {
   const today = new Date().toISOString().slice(0, 10)
-  return allLogs.value.filter(l => l.time.startsWith(today))
+  return allLogs.value.filter(l => l.time && l.time.startsWith(today))
 })
 
 const todayErrors = computed(() => {
   const today = new Date().toISOString().slice(0, 10)
-  return allLogs.value.filter(l => l.level === 'ERROR' && l.time.startsWith(today)).length
+  return allLogs.value.filter(l => l.level === 'ERROR' && l.time && l.time.startsWith(today)).length
 })
 
 function confirmClear() {
@@ -185,18 +164,43 @@ function confirmClear() {
     confirmButtonText: '确定',
     cancelButtonText: '取消',
     type: 'warning'
-  }).then(() => {
-    allLogs.value = []
-    ElMessage.success('日志已清空')
+  }).then(async () => {
+    try {
+      await systemAPI.clearLogs(0)
+      allLogs.value = []
+      ElMessage.success('日志已清空')
+    } catch (error) {
+      ElMessage.error('清空日志失败')
+    }
   }).catch(() => {})
 }
 
-function refreshLogs() {
+async function refreshLogs() {
+  await fetchLogs()
   ElMessage.success('日志已刷新')
 }
 
 function exportLogs() {
-  ElMessage.success('日志导出成功，文件: crawlmaster_logs_20240615.txt')
+  const exportUrl = api.defaults.baseURL + '/system/logs/export'
+  window.open(exportUrl)
+  ElMessage.success('日志导出已开始')
+}
+
+async function fetchLogs() {
+  try {
+    const params = {
+      page: currentPage.value,
+      page_size: pageSize
+    }
+    if (activeLevel.value !== 'ALL') params.level = activeLevel.value
+    if (logSearch.value) params.keyword = logSearch.value
+    const res = await systemAPI.getLogs(params)
+    if (res.data.success) {
+      allLogs.value = (res.data.data.list || res.data.data || []).map((l, i) => ({ ...l, id: l.id || i + 1 }))
+    }
+  } catch (error) {
+    ElMessage.error('获取日志失败')
+  }
 }
 
 function scrollToBottom() {
@@ -214,14 +218,8 @@ watch(currentPage, () => {
 })
 
 onMounted(() => {
-  allLogs.value = logRawData.map((l, i) => ({ ...l, id: i + 1 }))
-  scrollToBottom()
+  fetchLogs().then(() => scrollToBottom())
 })
-</script>
-
-<script>
-import { ElMessage, ElMessageBox } from 'element-plus'
-export default { name: 'SystemLogs' }
 </script>
 
 <style scoped>

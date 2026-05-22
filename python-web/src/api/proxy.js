@@ -2,62 +2,62 @@ import api from './index'
 
 export const proxyAPI = {
   getProxies(params) {
-    return api.get('/proxies', { params })
+    return api.get('/proxy/list', { params })
   },
 
   addProxy(data) {
-    return api.post('/proxies', data)
+    return api.post('/proxy/add', data)
   },
 
   deleteProxy(id) {
-    return api.delete(`/proxies/${id}`)
+    return api.delete(`/proxy/${id}`)
   },
 
   refreshProxy(id) {
-    return api.post(`/proxies/${id}/refresh`)
+    return api.post(`/proxy/${id}/refresh`)
   },
 
   getProxyGroups() {
-    return api.get('/proxies/groups')
+    return api.get('/proxy/groups')
   },
 
   createProxyGroup(data) {
-    return api.post('/proxies/groups', data)
+    return api.post('/proxy/groups', data)
   },
 
   assignProxyToGroup(data) {
-    return api.post('/proxies/assign', data)
+    return api.post('/proxy/groups/assign', data)
   },
 
   getBlacklist() {
-    return api.get('/proxies/blacklist')
+    return api.get('/proxy/blacklist')
   },
 
   addBlacklist(data) {
-    return api.post('/proxies/blacklist', data)
+    return api.post('/proxy/blacklist', data)
   },
 
   removeBlacklist(id) {
-    return api.delete(`/proxies/blacklist/${id}`)
+    return api.delete(`/proxy/blacklist/${id}`)
   },
 
   getWhitelist() {
-    return api.get('/proxies/whitelist')
+    return api.get('/proxy/whitelist')
   },
 
   addWhitelist(data) {
-    return api.post('/proxies/whitelist', data)
+    return api.post('/proxy/whitelist', data)
   },
 
   removeWhitelist(id) {
-    return api.delete(`/proxies/whitelist/${id}`)
+    return api.delete(`/proxy/whitelist/${id}`)
   },
 
   getRateLimits() {
-    return api.get('/proxies/rate-limits')
+    return api.get('/proxy/rate-limits')
   },
 
   setRateLimit(data) {
-    return api.post('/proxies/rate-limits', data)
+    return api.post('/proxy/rate-limits', data)
   }
 }

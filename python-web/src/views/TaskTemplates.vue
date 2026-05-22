@@ -111,8 +111,9 @@
               <textarea v-model="modalForm.description" class="form-textarea" rows="2" placeholder="简要描述此模板的用途..."></textarea>
             </div>
             <div class="form-group">
-              <label class="form-label">Cron 表达式</label>
-              <input v-model="modalForm.cron" type="text" class="form-input" placeholder="0 */6 * * *" />
+              <label class="form-label">执行周期（分钟）</label>
+              <input v-model.number="modalForm.intervalMinutes" type="number" class="form-input" placeholder="例如：30" min="1" />
+              <span class="form-hint">填写数字，单位为分钟。例如：30 表示每30分钟执行一次</span>
             </div>
             <div class="form-row">
               <div class="form-group">
@@ -141,6 +142,20 @@
 import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import NavBar from '../components/NavBar.vue'
+import { taskAPI } from '../api/task'
+import { ElMessage, ElMessageBox } from 'element-plus'
+
+function minutesToCron(minutes) {
+  if (!minutes || minutes < 1) return '*/30 * * * *'
+  return `*/${minutes} * * * *`
+}
+
+function cronToMinutes(cron) {
+  if (!cron) return 30
+  const match = cron.match(/^\*\/(\d+)\s+\*\s+\*\s+\*\s+\*$/)
+  if (match) return parseInt(match[1]) || 30
+  return 30
+}
 
 const router = useRouter()
 const loading = ref(true)
@@ -151,18 +166,19 @@ const editingTemplate = ref(null)
 const modalForm = reactive({
   name: '',
   description: '',
-  cron: '',
+  intervalMinutes: 30,
   concurrency: 5,
   interval: 2000
 })
 
 function useTemplate(tmpl) {
+  const intervalMinutes = cronToMinutes(tmpl.cron)
   router.push({
     path: '/tasks/new',
     query: {
       templateId: tmpl.id,
       name: tmpl.name,
-      cron: tmpl.cron,
+      intervalMinutes: intervalMinutes,
       concurrency: tmpl.concurrency,
       interval: tmpl.interval
     }
@@ -173,48 +189,57 @@ function editTemplate(tmpl) {
   editingTemplate.value = tmpl
   modalForm.name = tmpl.name
   modalForm.description = tmpl.description
-  modalForm.cron = tmpl.cron
+  modalForm.intervalMinutes = cronToMinutes(tmpl.cron)
   modalForm.concurrency = tmpl.concurrency
   modalForm.interval = tmpl.interval
   showCreateModal.value = true
 }
 
-function deleteTemplate(tmpl) {
-  const confirmed = window.confirm(`确定要删除模板「${tmpl.name}」吗？`)
-  if (confirmed) {
-    templates.value = templates.value.filter(t => t.id !== tmpl.id)
+async function deleteTemplate(tmpl) {
+  try {
+    await ElMessageBox.confirm(
+      `确定要删除模板「${tmpl.name}」吗？`,
+      '确认删除',
+      { confirmButtonText: '确定', cancelButtonText: '取消', type: 'warning' }
+    )
+    const res = await taskAPI.deleteTemplate(tmpl.id)
+    if (res.data.success) {
+      templates.value = templates.value.filter(t => t.id !== tmpl.id)
+      ElMessage.success('删除成功')
+    } else {
+      ElMessage.error(res.data.message || '删除失败')
+    }
+  } catch (e) {
+    if (e !== 'cancel' && e !== 'close') {
+      ElMessage.error('删除失败')
+    }
   }
 }
 
-function saveTemplate() {
+async function saveTemplate() {
   if (!modalForm.name.trim()) return
 
-  if (editingTemplate.value) {
-    const idx = templates.value.findIndex(t => t.id === editingTemplate.value.id)
-    if (idx !== -1) {
-      templates.value[idx] = {
-        ...templates.value[idx],
-        name: modalForm.name,
-        description: modalForm.description,
-        cron: modalForm.cron,
-        concurrency: modalForm.concurrency,
-        interval: modalForm.interval
-      }
+  try {
+    const config = {
+      cron_expr: minutesToCron(modalForm.intervalMinutes),
+      concurrency: modalForm.concurrency,
+      interval: modalForm.interval
     }
-  } else {
-    const newId = Math.max(...templates.value.map(t => t.id), 0) + 1
-    templates.value.push({
-      id: newId,
+    const res = await taskAPI.createTemplate({
       name: modalForm.name,
       description: modalForm.description,
-      cron: modalForm.cron,
-      concurrency: modalForm.concurrency,
-      interval: modalForm.interval,
-      useCount: 0,
-      createdAt: new Date().toLocaleDateString('zh-CN')
+      config: config
     })
+    if (res.data.success) {
+      ElMessage.success('创建模板成功')
+      closeModal()
+      fetchTemplates()
+    } else {
+      ElMessage.error(res.data.message || '创建模板失败')
+    }
+  } catch (e) {
+    ElMessage.error('操作失败')
   }
-  closeModal()
 }
 
 function closeModal() {
@@ -222,23 +247,43 @@ function closeModal() {
   editingTemplate.value = null
   modalForm.name = ''
   modalForm.description = ''
-  modalForm.cron = ''
+  modalForm.intervalMinutes = 30
   modalForm.concurrency = 5
   modalForm.interval = 2000
 }
 
+function mapTemplateFromApi(item) {
+  let config = item.config
+  if (typeof config === 'string') {
+    try { config = JSON.parse(config) } catch (e) { config = {} }
+  }
+  config = config || {}
+  return {
+    id: item.id,
+    name: item.name,
+    description: item.description || '',
+    cron: config.cron_expr || config.cron || '',
+    concurrency: config.concurrency || 5,
+    interval: config.interval || 2000,
+    useCount: item.use_count || 0,
+    createdAt: item.created_at || ''
+  }
+}
+
 async function fetchTemplates() {
   loading.value = true
-  await new Promise(r => setTimeout(r, 400))
-  templates.value = [
-    { id: 1, name: '电商商品采集', description: '适用于主流电商平台的商品信息采集，支持分页和详情页爬取', cron: '0 */6 * * *', concurrency: 5, interval: 2000, useCount: 128, createdAt: '2026-03-15' },
-    { id: 2, name: '新闻资讯爬取', description: '定时采集新闻网站的最新资讯内容，支持多源聚合', cron: '0 */2 * * *', concurrency: 3, interval: 1000, useCount: 67, createdAt: '2026-02-20' },
-    { id: 3, name: '社交媒体监控', description: '监控社交媒体平台的关键词和话题趋势', cron: '*/30 * * * *', concurrency: 8, interval: 500, useCount: 204, createdAt: '2026-01-10' },
-    { id: 4, name: '金融行情采集', description: '实时采集股票、汇率等金融数据，支持多市场数据源', cron: '*/5 * * * *', concurrency: 10, interval: 200, useCount: 89, createdAt: '2025-12-01' },
-    { id: 5, name: '房源信息采集', description: '采集各大房产平台的房源信息，含价格走势和区域分析', cron: '0 */12 * * *', concurrency: 4, interval: 3000, useCount: 42, createdAt: '2025-10-18' },
-    { id: 6, name: '招聘信息汇总', description: '从多个招聘网站收集职位信息，支持按行业和地区筛选', cron: '0 */8 * * *', concurrency: 6, interval: 1500, useCount: 156, createdAt: '2025-09-05' }
-  ]
-  loading.value = false
+  try {
+    const res = await taskAPI.getTemplates()
+    if (res.data.success) {
+      templates.value = (res.data.data || []).map(mapTemplateFromApi)
+    } else {
+      ElMessage.error(res.data.message || '获取模板列表失败')
+    }
+  } catch (e) {
+    ElMessage.error('获取模板列表失败')
+  } finally {
+    loading.value = false
+  }
 }
 
 onMounted(() => {
@@ -491,6 +536,11 @@ onMounted(() => {
 .form-input:focus {
   border-color: rgba(76, 110, 245, 0.4);
   box-shadow: 0 0 0 3px rgba(76, 110, 245, 0.08);
+}
+
+.form-hint {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.35);
 }
 
 .form-textarea {

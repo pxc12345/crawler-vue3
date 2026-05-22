@@ -27,7 +27,7 @@
               <button class="btn-add-small" @click="addBlack">添加</button>
             </div>
             <div class="list-items">
-              <div v-for="item in blacklist" :key="item.url" class="list-item item-black">
+              <div v-for="item in blacklist" :key="item.id || item.url" class="list-item item-black">
                 <div class="item-info">
                   <span class="item-url">{{ item.url }}</span>
                   <span class="item-reason" v-if="item.reason">{{ item.reason }}</span>
@@ -50,7 +50,7 @@
               <button class="btn-add-small green" @click="addWhite">添加</button>
             </div>
             <div class="list-items">
-              <div v-for="item in whitelist" :key="item.url" class="list-item item-white">
+              <div v-for="item in whitelist" :key="item.id || item.url" class="list-item item-white">
                 <div class="item-info">
                   <span class="item-url">{{ item.url }}</span>
                   <span class="item-reason" v-if="item.reason">{{ item.reason }}</span>
@@ -132,7 +132,9 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
+import { ElMessage } from 'element-plus'
+import { proxyAPI } from '../api/proxy'
 import NavBar from '../components/NavBar.vue'
 
 const activeTab = ref('list')
@@ -147,73 +149,147 @@ const globalConcurrent = ref(10)
 const blackInput = ref({ url: '', reason: '' })
 const whiteInput = ref({ url: '', reason: '' })
 
-const blacklist = ref([
-  { url: 'https://evil-crawler.example.com', reason: '恶意爬虫来源' },
-  { url: 'https://banned-bot.net', reason: '封禁机器人' },
-  { url: 'https://spam-scraper.org', reason: '违规采集' }
-])
+const blacklist = ref([])
 
-const whitelist = ref([
-  { url: 'https://trusted-partner.com', reason: '合作伙伴API' },
-  { url: 'https://internal-api.local', reason: '内部服务' }
-])
+const whitelist = ref([])
 
-const taskFreqs = ref([
-  { name: '电商商品数据采集', rpm: 30, concurrent: 3 },
-  { name: '新闻资讯爬取', rpm: 60, concurrent: 5 },
-  { name: '竞品价格追踪', rpm: 20, concurrent: 2 },
-  { name: '社交媒体采集', rpm: 15, concurrent: 2 },
-  { name: '地图POI数据', rpm: 40, concurrent: 4 }
-])
+const taskFreqs = ref([])
 
-function addBlack() {
+async function addBlack() {
   if (!blackInput.value.url) { ElMessage.warning('请输入URL'); return }
-  blacklist.value.push({ url: blackInput.value.url, reason: blackInput.value.reason })
-  blackInput.value = { url: '', reason: '' }
-  ElMessage.success('已添加到黑名单')
+  try {
+    const res = await proxyAPI.addBlacklist({ url: blackInput.value.url, reason: blackInput.value.reason })
+    if (res.data.success) {
+      blackInput.value = { url: '', reason: '' }
+      ElMessage.success('已添加到黑名单')
+      await fetchBlacklist()
+    }
+  } catch (error) {
+    ElMessage.error('添加黑名单失败')
+  }
 }
 
-function removeBlack(item) {
-  blacklist.value = blacklist.value.filter(b => b.url !== item.url)
-  ElMessage.success('已从黑名单移除')
+async function removeBlack(item) {
+  try {
+    await proxyAPI.removeBlacklist(item.id || item.url)
+    blacklist.value = blacklist.value.filter(b => (b.id || b.url) !== (item.id || item.url))
+    ElMessage.success('已从黑名单移除')
+  } catch (error) {
+    ElMessage.error('移除黑名单失败')
+  }
 }
 
-function addWhite() {
+async function addWhite() {
   if (!whiteInput.value.url) { ElMessage.warning('请输入URL'); return }
-  whitelist.value.push({ url: whiteInput.value.url, reason: whiteInput.value.reason })
-  whiteInput.value = { url: '', reason: '' }
-  ElMessage.success('已添加到白名单')
+  try {
+    const res = await proxyAPI.addWhitelist({ url: whiteInput.value.url, reason: whiteInput.value.reason })
+    if (res.data.success) {
+      whiteInput.value = { url: '', reason: '' }
+      ElMessage.success('已添加到白名单')
+      await fetchWhitelist()
+    }
+  } catch (error) {
+    ElMessage.error('添加白名单失败')
+  }
 }
 
-function removeWhite(item) {
-  whitelist.value = whitelist.value.filter(w => w.url !== item.url)
-  ElMessage.success('已从白名单移除')
+async function removeWhite(item) {
+  try {
+    await proxyAPI.removeWhitelist(item.id || item.url)
+    whitelist.value = whitelist.value.filter(w => (w.id || w.url) !== (item.id || item.url))
+    ElMessage.success('已从白名单移除')
+  } catch (error) {
+    ElMessage.error('移除白名单失败')
+  }
 }
 
-function saveGlobalFreq() {
-  ElMessage.success('全局频率设置已保存')
+async function saveGlobalFreq() {
+  try {
+    await proxyAPI.setRateLimit({
+      task_id: null,
+      requests_per_minute: globalRpm.value,
+      concurrent_max: globalConcurrent.value
+    })
+    ElMessage.success('全局频率设置已保存')
+  } catch (error) {
+    ElMessage.error('保存频率设置失败')
+  }
 }
 
 function editTaskFreq(task) {
   editingTask.value = task
-  editRpm.value = task.rpm
-  editConcurrent.value = task.concurrent
+  editRpm.value = task.requests_per_minute || task.rpm || 60
+  editConcurrent.value = task.concurrent_max || task.concurrent || 5
   showTaskEdit.value = true
 }
 
-function saveTaskFreq() {
+async function saveTaskFreq() {
   if (editingTask.value) {
-    editingTask.value.rpm = editRpm.value
-    editingTask.value.concurrent = editConcurrent.value
+    try {
+      const taskId = editingTask.value.id || editingTask.value.task_id
+      await proxyAPI.setRateLimit({
+        task_id: taskId,
+        requests_per_minute: editRpm.value,
+        concurrent_max: editConcurrent.value
+      })
+      editingTask.value.requests_per_minute = editRpm.value
+      editingTask.value.concurrent_max = editConcurrent.value
+      editingTask.value.rpm = editRpm.value
+      editingTask.value.concurrent = editConcurrent.value
+      showTaskEdit.value = false
+      ElMessage.success('任务频率设置已保存')
+    } catch (error) {
+      ElMessage.error('保存任务频率失败')
+    }
   }
-  showTaskEdit.value = false
-  ElMessage.success('任务频率设置已保存')
 }
-</script>
 
-<script>
-import { ElMessage } from 'element-plus'
-export default { name: 'AntiCrawl' }
+async function fetchBlacklist() {
+  try {
+    const res = await proxyAPI.getBlacklist()
+    if (res.data.success) {
+      blacklist.value = res.data.data || []
+    }
+  } catch (error) {
+    // 静默处理
+  }
+}
+
+async function fetchWhitelist() {
+  try {
+    const res = await proxyAPI.getWhitelist()
+    if (res.data.success) {
+      whitelist.value = res.data.data || []
+    }
+  } catch (error) {
+    // 静默处理
+  }
+}
+
+async function fetchRateLimits() {
+  try {
+    const res = await proxyAPI.getRateLimits()
+    if (res.data.success) {
+      const data = res.data.data || []
+      taskFreqs.value = data.map(t => ({
+        id: t.id || t.task_id,
+        name: t.name || t.task_name || t.task_id,
+        rpm: t.requests_per_minute || t.rpm || 0,
+        concurrent: t.concurrent_max || t.concurrent || 0,
+        requests_per_minute: t.requests_per_minute,
+        concurrent_max: t.concurrent_max
+      }))
+    }
+  } catch (error) {
+    // 静默处理
+  }
+}
+
+onMounted(() => {
+  fetchBlacklist()
+  fetchWhitelist()
+  fetchRateLimits()
+})
 </script>
 
 <style scoped>

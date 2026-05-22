@@ -158,6 +158,7 @@ class AuthService:
     def login_required(self, f):
         @wraps(f)
         def decorated_function(*args, **kwargs):
+            # 装饰器不处理 OPTIONS，由全局 before_request 处理
             auth_header = request.headers.get('Authorization')
             if not auth_header:
                 return jsonify({'success': False, 'message': '未提供认证令牌', 'code': 'TOKEN_MISSING'}), 401
@@ -176,7 +177,7 @@ class AuthService:
             if not payload or payload.get('type') != 'access':
                 return jsonify({'success': False, 'message': '无效的Token', 'code': 'TOKEN_INVALID'}), 401
 
-            request.user_id = payload['sub']
+            request.user_id = int(payload['sub'])
             request.username = payload['username']
             return f(*args, **kwargs)
 

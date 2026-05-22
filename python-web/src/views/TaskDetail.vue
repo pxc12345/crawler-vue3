@@ -15,7 +15,7 @@
               <span class="status-dot"></span>
               {{ statusLabel(task.status) }}
             </span>
-            <button class="btn-version" @click="$router.push(`/tasks/${task.id}/versions`)">
+            <button class="btn-version" @click="task.id && $router.push(`/tasks/${task.id}/versions`)">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <line x1="6" y1="3" x2="6" y2="15"/>
                 <circle cx="18" cy="6" r="3"/>
@@ -55,8 +55,8 @@
             </div>
             <div class="form-row">
               <div class="form-group">
-                <label class="form-label">Cron 表达式</label>
-                <input v-model="form.cron" type="text" class="form-input" :disabled="!editing" placeholder="0 */6 * * *" />
+                <label class="form-label">执行周期（分钟）</label>
+                <input v-model.number="form.intervalMinutes" type="number" class="form-input" :disabled="!editing" placeholder="例如：30" min="1" />
               </div>
               <div class="form-group">
                 <label class="form-label">并发数</label>
@@ -117,7 +117,12 @@
                 <span>自动滚动</span>
               </label>
             </div>
-            <button class="btn-clear-log" @click="logs = []">清空日志</button>
+            <div class="log-control-right">
+              <button class="btn-refresh-log" @click="refreshLogs" :disabled="logsLoading">
+                {{ logsLoading ? '加载中...' : '刷新日志' }}
+              </button>
+              <button class="btn-clear-log" @click="logs = []">清空日志</button>
+            </div>
           </div>
           <div class="log-viewer" ref="logViewerRef">
             <div v-for="(line, idx) in logs" :key="idx" class="log-line" :class="line.type">
@@ -174,26 +179,18 @@
 <script setup>
 import { ref, reactive, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute } from 'vue-router'
+import { ElMessage } from 'element-plus'
 import NavBar from '../components/NavBar.vue'
+import { taskAPI } from '../api/task'
+import { systemAPI } from '../api/system'
 
 const route = useRoute()
 const activeTab = ref('info')
 const editing = ref(false)
 const autoScroll = ref(true)
 const logViewerRef = ref(null)
-let logTimer = null
 
-const task = ref({
-  id: route.params.id,
-  name: '电商商品数据采集',
-  url: 'https://example-shop.com/products',
-  status: 'running',
-  cron: '0 */6 * * *',
-  concurrency: 5,
-  interval: 2000,
-  maxRetries: 3,
-  headers: '{"User-Agent": "Mozilla/5.0", "Accept": "application/json"}'
-})
+const task = ref({})
 
 const tabs = [
   { key: 'info', label: '基础信息' },
@@ -205,10 +202,22 @@ const tabs = [
 const statusLabelMap = { running: '运行中', pending: '待执行', completed: '已完成', failed: '失败' }
 function statusLabel(status) { return statusLabelMap[status] || status }
 
+function minutesToCron(minutes) {
+  if (!minutes || minutes < 1) return '*/30 * * * *'
+  return `*/${minutes} * * * *`
+}
+
+function cronToMinutes(cron) {
+  if (!cron) return 30
+  const match = cron.match(/^\*\/(\d+)\s+\*\s+\*\s+\*\s+\*$/)
+  if (match) return parseInt(match[1]) || 30
+  return 30
+}
+
 const form = reactive({
   name: '',
   url: '',
-  cron: '',
+  intervalMinutes: 30,
   concurrency: 0,
   interval: 0,
   maxRetries: 0,
@@ -218,13 +227,18 @@ const form = reactive({
 const formBackup = ref(null)
 
 function loadForm() {
-  form.name = task.value.name
-  form.url = task.value.url
-  form.cron = task.value.cron
-  form.concurrency = task.value.concurrency
-  form.interval = task.value.interval
-  form.maxRetries = task.value.maxRetries
-  form.headers = task.value.headers
+  const t = task.value
+  const config = t.config || {}
+  if (typeof config === 'string') {
+    try { config = JSON.parse(config) } catch (e) { config = {} }
+  }
+  form.name = t.name || ''
+  form.url = t.target_url || config.target_url || ''
+  form.intervalMinutes = cronToMinutes(t.cron_expr || config.cron)
+  form.concurrency = t.concurrency || config.concurrency || 0
+  form.interval = t.interval_seconds || config.interval_seconds || config.interval || 0
+  form.maxRetries = t.retry_count || config.maxRetries || 0
+  form.headers = typeof config.headers === 'object' ? JSON.stringify(config.headers) : (config.headers || '')
   formBackup.value = { ...form }
 }
 
@@ -235,74 +249,110 @@ function cancelEdit() {
   editing.value = false
 }
 
-function saveConfig() {
-  task.value.name = form.name
-  task.value.url = form.url
-  task.value.cron = form.cron
-  task.value.concurrency = form.concurrency
-  task.value.interval = form.interval
-  task.value.maxRetries = form.maxRetries
-  task.value.headers = form.headers
-  editing.value = false
+async function saveConfig() {
+  try {
+    const config = {
+      target_url: form.url,
+      cron_expr: minutesToCron(form.intervalMinutes),
+      concurrency: form.concurrency,
+      interval_seconds: form.interval,
+      maxRetries: form.maxRetries,
+      headers: form.headers
+    }
+    const res = await taskAPI.updateTask(task.value.id, {
+      name: form.name,
+      config: config
+    })
+    if (res.data.success) {
+      task.value.name = form.name
+      task.value.target_url = form.url
+      task.value.cron_expr = minutesToCron(form.intervalMinutes)
+      task.value.concurrency = form.concurrency
+      task.value.interval_seconds = form.interval
+      task.value.retry_count = form.maxRetries
+      task.value.config = config
+      editing.value = false
+      ElMessage.success('保存成功')
+    } else {
+      ElMessage.error(res.data.message || '保存失败')
+    }
+  } catch (e) {
+    ElMessage.error('保存失败')
+  }
 }
 
-const executionRecords = ref([
-  { id: 1, version: 3, status: 'completed', duration: '2h 15m', dataCount: 4820, time: '2026-05-21 14:30' },
-  { id: 2, version: 2, status: 'completed', duration: '2h 08m', dataCount: 4570, time: '2026-05-20 08:15' },
-  { id: 3, version: 1, status: 'failed', duration: '0h 45m', dataCount: 320, time: '2026-05-19 16:00' },
-  { id: 4, version: 1, status: 'completed', duration: '2h 30m', dataCount: 5100, time: '2026-05-18 06:00' }
-])
-
-const logTemplates = [
-  { type: 'info', level: 'INFO', msg: '任务初始化完成，开始执行数据采集...' },
-  { type: 'info', level: 'INFO', msg: '正在连接目标站点: {url}' },
-  { type: 'info', level: 'INFO', msg: '连接成功，开始解析页面结构...' },
-  { type: 'info', level: 'INFO', msg: '发现 <span class="kw">128</span> 条目标数据记录' },
-  { type: 'info', level: 'INFO', msg: '分页处理: 第 <span class="kw">1</span> 页, 已采集 <span class="kw">50</span> 条' },
-  { type: 'info', level: 'INFO', msg: '分页处理: 第 <span class="kw">2</span> 页, 已采集 <span class="kw">100</span> 条' },
-  { type: 'warn', level: 'WARN', msg: '请求延迟较高: <span class="kw">3.2s</span>, 当前重试第 <span class="kw">1</span> 次' },
-  { type: 'info', level: 'INFO', msg: '分页处理: 第 <span class="kw">3</span> 页, 已采集 <span class="kw">128</span> 条' },
-  { type: 'error', level: 'ERROR', msg: '解析页面 <span class="kw">#product-list</span> 时出现异常: <span class="err">Element not found</span>' },
-  { type: 'warn', level: 'WARN', msg: '触发反爬检测，切换代理 IP: <span class="kw">192.168.1.100</span>' },
-  { type: 'info', level: 'INFO', msg: '数据清洗完成，有效记录: <span class="kw">4820</span> 条' },
-  { type: 'info', level: 'INFO', msg: '数据已写入数据库，本次任务执行完毕' }
-]
-
+const executionRecords = ref([])
 const logs = ref([])
+const logsLoading = ref(false)
 
-function generateLogs() {
-  if (activeTab.value !== 'logs') return
-  const tmpl = logTemplates[Math.floor(Math.random() * logTemplates.length)]
-  const now = new Date()
-  const time = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`
-  logs.value.push({
-    time,
-    type: tmpl.type,
-    level: tmpl.level,
-    message: tmpl.msg
-  })
-  if (logs.value.length > 200) {
-    logs.value = logs.value.slice(-200)
+async function fetchTask() {
+  // 跳过无效的 task id
+  if (!route.params.id || route.params.id === 'new' || route.params.id === 'undefined') {
+    return
   }
-  if (autoScroll.value) {
-    nextTick(() => {
-      if (logViewerRef.value) {
-        logViewerRef.value.scrollTop = logViewerRef.value.scrollHeight
-      }
-    })
+  try {
+    const res = await taskAPI.getTask(route.params.id)
+    if (res.data.success) {
+      task.value = res.data.data
+      loadForm()
+    }
+  } catch (e) {
+    console.error('获取任务详情失败:', e)
+  }
+}
+
+async function fetchVersions() {
+  // 跳过无效的 task id
+  if (!route.params.id || route.params.id === 'new' || route.params.id === 'undefined') {
+    return
+  }
+  try {
+    const res = await taskAPI.getVersions(route.params.id)
+    if (res.data.success) {
+      const versions = res.data.data || []
+      executionRecords.value = versions.map((v, index) => ({
+        id: v.id,
+        version: v.version_index || (versions.length - index),
+        status: 'completed',
+        duration: 'N/A',
+        dataCount: 0,
+        time: v.created_at || '',
+        changeLog: v.change_log || ''
+      }))
+    }
+  } catch (e) {
+    console.error('获取版本列表失败:', e)
+  }
+}
+
+async function refreshLogs() {
+  logsLoading.value = true
+  try {
+    const res = await systemAPI.getLogs({ source: 'crawler_task', limit: 200, page_size: 200 })
+    if (res.data.success) {
+      const logList = res.data.data?.list || []
+      logs.value = logList.map(item => ({
+        time: item.created_at ? item.created_at.split(' ')[1] || item.created_at : '',
+        type: item.level ? item.level.toLowerCase() : 'info',
+        level: item.level || 'INFO',
+        message: item.message || ''
+      }))
+    }
+  } catch (e) {
+    console.error('获取日志失败:', e)
+  } finally {
+    logsLoading.value = false
   }
 }
 
 onMounted(() => {
-  loadForm()
-  logTimer = setInterval(generateLogs, 1500)
-})
-
-onBeforeUnmount(() => {
-  if (logTimer) clearInterval(logTimer)
+  fetchTask()
 })
 
 watch(activeTab, (val) => {
+  if (val === 'records') {
+    fetchVersions()
+  }
   if (val === 'logs' && autoScroll.value) {
     nextTick(() => {
       if (logViewerRef.value) {

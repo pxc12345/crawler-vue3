@@ -60,12 +60,12 @@
                 </td>
                 <td>
                   <div class="success-bar">
-                    <div class="success-fill" :style="{ width: p.successRate + '%' }" :class="p.successRate>=80 ? 's-high' : p.successRate>=50 ? 's-mid' : 's-low'"></div>
-                    <span class="success-text">{{ p.successRate }}%</span>
+                    <div class="success-fill" :style="{ width: (p.success_rate || p.successRate || 0) + '%' }" :class="(p.success_rate || p.successRate || 0)>=80 ? 's-high' : (p.success_rate || p.successRate || 0)>=50 ? 's-mid' : 's-low'"></div>
+                    <span class="success-text">{{ p.success_rate || p.successRate || 0 }}%</span>
                   </div>
                 </td>
-                <td>{{ p.aliveTime }}</td>
-                <td class="mono-sm">{{ p.lastCheck }}</td>
+                <td>{{ p.alive_time || p.aliveTime || '-' }}</td>
+                <td class="mono-sm">{{ p.last_check || p.lastCheck || '-' }}</td>
                 <td>
                   <button class="btn-sm" @click="refreshProxy(p)">刷新</button>
                   <button class="btn-sm btn-danger-sm" @click="deleteProxy(p)">删除</button>
@@ -154,6 +154,8 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { proxyAPI } from '../api/proxy'
 import NavBar from '../components/NavBar.vue'
 
 const showAddModal = ref(false)
@@ -162,31 +164,16 @@ const showGroupModal = ref(false)
 const newProxy = ref({ ip: '', port: '', protocol: 'http' })
 const newGroup = ref({ name: '', proxies: [] })
 
-const proxies = ref([
-  { id: 1, ip: '203.0.113.45', port: 8080, protocol: 'http', status: 'online', successRate: 94, aliveTime: '3天12小时', lastCheck: '2秒前' },
-  { id: 2, ip: '198.51.100.22', port: 3128, protocol: 'https', status: 'online', successRate: 88, aliveTime: '5天8小时', lastCheck: '15秒前' },
-  { id: 3, ip: '192.0.2.78', port: 1080, protocol: 'socks5', status: 'online', successRate: 76, aliveTime: '1天4小时', lastCheck: '30秒前' },
-  { id: 4, ip: '203.0.113.99', port: 8080, protocol: 'http', status: 'offline', successRate: 45, aliveTime: '8小时', lastCheck: '5分钟前' },
-  { id: 5, ip: '198.51.100.55', port: 443, protocol: 'https', status: 'online', successRate: 91, aliveTime: '7天2小时', lastCheck: '1秒前' },
-  { id: 6, ip: '192.0.2.100', port: 3128, protocol: 'http', status: 'online', successRate: 82, aliveTime: '2天16小时', lastCheck: '8秒前' },
-  { id: 7, ip: '10.10.34.12', port: 1080, protocol: 'socks5', status: 'offline', successRate: 32, aliveTime: '3小时', lastCheck: '12分钟前' },
-  { id: 8, ip: '172.16.0.88', port: 3128, protocol: 'http', status: 'online', successRate: 95, aliveTime: '12天5小时', lastCheck: '3秒前' }
-])
+const proxies = ref([])
 
-const groups = ref([
-  { id: 1, name: '高可用组', proxies: [1, 5, 8] },
-  { id: 2, name: '备用组', proxies: [2, 3, 6] }
-])
-
-let nextId = 9
-let nextGroupId = 3
+const groups = ref([])
 
 const onlineCount = computed(() => proxies.value.filter(p => p.status === 'online').length)
 
 const avgSuccessRate = computed(() => {
   const online = proxies.value.filter(p => p.status === 'online')
   if (online.length === 0) return 0
-  return Math.round(online.reduce((s, p) => s + p.successRate, 0) / online.length)
+  return Math.round(online.reduce((s, p) => s + (p.success_rate || p.successRate || 0), 0) / online.length)
 })
 
 const avgAliveTime = computed(() => {
@@ -199,67 +186,91 @@ function getProxyById(id) {
   return proxies.value.find(p => p.id === id)
 }
 
-function addProxy() {
+async function addProxy() {
   if (!newProxy.value.ip || !newProxy.value.port) {
     ElMessage.warning('请填写完整的代理信息')
     return
   }
-  proxies.value.push({
-    id: nextId++,
-    ip: newProxy.value.ip,
-    port: parseInt(newProxy.value.port) || 8080,
-    protocol: newProxy.value.protocol,
-    status: 'online',
-    successRate: Math.round(70 + Math.random() * 30),
-    aliveTime: '刚刚',
-    lastCheck: '刚刚'
-  })
-  newProxy.value = { ip: '', port: '', protocol: 'http' }
-  showAddModal.value = false
-  ElMessage.success('代理添加成功')
+  try {
+    const res = await proxyAPI.addProxy({
+      ip: newProxy.value.ip,
+      port: parseInt(newProxy.value.port) || 8080,
+      protocol: newProxy.value.protocol
+    })
+    if (res.data.success) {
+      newProxy.value = { ip: '', port: '', protocol: 'http' }
+      showAddModal.value = false
+      ElMessage.success('代理添加成功')
+      await fetchProxies()
+    } else {
+      ElMessage.error(res.data.message || '添加失败')
+    }
+  } catch (error) {
+    ElMessage.error('添加代理失败')
+  }
 }
 
-function refreshProxy(proxy) {
-  proxy.successRate = Math.round(70 + Math.random() * 30)
-  proxy.lastCheck = '刚刚'
-  proxy.status = proxy.successRate > 40 ? 'online' : 'offline'
-  ElMessage.success(`代理 ${proxy.ip} 已刷新`)
+async function refreshProxy(proxy) {
+  try {
+    const res = await proxyAPI.refreshProxy(proxy.id)
+    if (res.data.success) {
+      ElMessage.success(`代理 ${proxy.ip} 已刷新`)
+      await fetchProxies()
+    }
+  } catch (error) {
+    ElMessage.error('刷新代理失败')
+  }
 }
 
 function deleteProxy(proxy) {
   ElMessageBox.confirm(`确认删除代理 ${proxy.ip}:${proxy.port}？`, '确认删除', {
     confirmButtonText: '确定', cancelButtonText: '取消', type: 'warning'
-  }).then(() => {
-    proxies.value = proxies.value.filter(p => p.id !== proxy.id)
-    groups.value.forEach(g => {
-      g.proxies = g.proxies.filter(pid => pid !== proxy.id)
-    })
-    ElMessage.success('代理已删除')
+  }).then(async () => {
+    try {
+      await proxyAPI.deleteProxy(proxy.id)
+      proxies.value = proxies.value.filter(p => p.id !== proxy.id)
+      groups.value.forEach(g => {
+        g.proxies = g.proxies.filter(pid => pid !== proxy.id)
+      })
+      ElMessage.success('代理已删除')
+    } catch (error) {
+      ElMessage.error('删除代理失败')
+    }
   }).catch(() => {})
 }
 
-function refreshAll() {
-  proxies.value.forEach(p => {
-    p.successRate = Math.round(70 + Math.random() * 30)
-    p.lastCheck = '刚刚'
-    p.status = p.successRate > 40 ? 'online' : 'offline'
-  })
-  ElMessage.success('全部代理已刷新')
+async function refreshAll() {
+  try {
+    for (const p of proxies.value) {
+      await proxyAPI.refreshProxy(p.id)
+    }
+    ElMessage.success('全部代理已刷新')
+    await fetchProxies()
+  } catch (error) {
+    ElMessage.error('刷新代理失败')
+  }
 }
 
-function createGroup() {
+async function createGroup() {
   if (!newGroup.value.name) {
     ElMessage.warning('请输入分组名称')
     return
   }
-  groups.value.push({
-    id: nextGroupId++,
-    name: newGroup.value.name,
-    proxies: [...newGroup.value.proxies]
-  })
-  newGroup.value = { name: '', proxies: [] }
-  showGroupModal.value = false
-  ElMessage.success('分组创建成功')
+  try {
+    const res = await proxyAPI.createProxyGroup({ name: newGroup.value.name })
+    if (res.data.success) {
+      const group = res.data.data
+      for (const pid of newGroup.value.proxies) {
+        await proxyAPI.assignProxyToGroup({ proxy_id: pid, group_id: group.id })
+      }
+      newGroup.value = { name: '', proxies: [] }
+      showGroupModal.value = false
+      ElMessage.success('分组创建成功')
+      await fetchGroups()
+    }
+  } catch (error) {
+    ElMessage.error('创建分组失败')
+  }
 }
 
 function manageGroup(group) {
@@ -269,16 +280,42 @@ function manageGroup(group) {
 function deleteGroup(group) {
   ElMessageBox.confirm(`确认删除分组「${group.name}」？`, '确认删除', {
     confirmButtonText: '确定', cancelButtonText: '取消', type: 'warning'
-  }).then(() => {
-    groups.value = groups.value.filter(g => g.id !== group.id)
-    ElMessage.success('分组已删除')
+  }).then(async () => {
+    try {
+      groups.value = groups.value.filter(g => g.id !== group.id)
+      ElMessage.success('分组已删除')
+    } catch (error) {
+      ElMessage.error('删除分组失败')
+    }
   }).catch(() => {})
 }
-</script>
 
-<script>
-import { ElMessage, ElMessageBox } from 'element-plus'
-export default { name: 'ProxyPool' }
+async function fetchProxies() {
+  try {
+    const res = await proxyAPI.getProxies({ page_size: 100 })
+    if (res.data.success) {
+      proxies.value = res.data.data.list || res.data.data || []
+    }
+  } catch (error) {
+    ElMessage.error('获取代理列表失败')
+  }
+}
+
+async function fetchGroups() {
+  try {
+    const res = await proxyAPI.getProxyGroups()
+    if (res.data.success) {
+      groups.value = res.data.data || []
+    }
+  } catch (error) {
+    // 静默处理
+  }
+}
+
+onMounted(() => {
+  fetchProxies()
+  fetchGroups()
+})
 </script>
 
 <style scoped>

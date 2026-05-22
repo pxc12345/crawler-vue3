@@ -107,7 +107,7 @@
             <h3 class="feature-title">系统通知</h3>
             <p class="feature-desc">查看最新系统消息和告警通知</p>
           </div>
-          <div class="feature-notice-badge">3 条新消息</div>
+          <div class="feature-notice-badge">{{ unreadAlertCount > 0 ? unreadAlertCount + ' 条新消息' : '暂无新消息' }}</div>
           <div class="feature-indicator red"></div>
         </div>
       </div>
@@ -268,28 +268,34 @@
 
 <script setup>
 import { computed, onMounted, ref, reactive } from 'vue'
+import { ElMessage } from 'element-plus'
 import NavBar from '../components/NavBar.vue'
 import { useAuthStore } from '../stores/auth'
+import { systemAPI } from '../api/system'
+import { alertAPI } from '../api/alert'
+import { taskAPI } from '../api/task'
 
 const authStore = useAuthStore()
 const loaded = ref(false)
 
 const todayStats = reactive({
-  collected: '128',
-  tasks: '6'
+  collected: '0',
+  tasks: '0'
 })
 
-const chartPoints = [40, 65, 45, 80, 55, 95, 70, 110, 85, 120, 100, 90, 75, 105, 60, 50, 72, 88, 65, 95, 78, 115, 85, 70]
+const unreadAlertCount = ref(0)
+
+const chartPoints = ref([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
 const chartLabels = ['00:00', '03:00', '06:00', '09:00', '12:00', '15:00', '18:00', '21:00']
 
 const chartLinePath = computed(() => {
   const w = 600
   const h = 140
   const pad = 10
-  const max = Math.max(...chartPoints)
-  const stepX = (w - pad * 2) / (chartPoints.length - 1)
+  const max = Math.max(...chartPoints.value, 1)
+  const stepX = (w - pad * 2) / (chartPoints.value.length - 1)
   let d = ''
-  chartPoints.forEach((p, i) => {
+  chartPoints.value.forEach((p, i) => {
     const x = pad + i * stepX
     const y = h - pad - (p / max) * (h - pad * 2)
     d += `${i === 0 ? 'M' : 'L'}${x},${y} `
@@ -301,10 +307,10 @@ const chartAreaPath = computed(() => {
   const w = 600
   const h = 140
   const pad = 10
-  const max = Math.max(...chartPoints)
-  const stepX = (w - pad * 2) / (chartPoints.length - 1)
+  const max = Math.max(...chartPoints.value, 1)
+  const stepX = (w - pad * 2) / (chartPoints.value.length - 1)
   let d = ''
-  chartPoints.forEach((p, i) => {
+  chartPoints.value.forEach((p, i) => {
     const x = pad + i * stepX
     const y = h - pad - (p / max) * (h - pad * 2)
     d += `${i === 0 ? 'M' : 'L'}${x},${y} `
@@ -345,14 +351,49 @@ function expandQuickActions() {
   window.scrollTo({ top: document.querySelector('.quick-actions-section')?.offsetTop - 80, behavior: 'smooth' })
 }
 
-function restartFailedTasks() {
-  ElMessage.success('正在重启失败任务...')
+async function restartFailedTasks() {
+  try {
+    const res = await taskAPI.restartFailedTasks()
+    if (res.data.success) {
+      ElMessage.success(res.data.message || '正在重启失败任务...')
+      fetchDashboardStats()
+    } else {
+      ElMessage.error(res.data.message || '重启失败')
+    }
+  } catch (e) {
+    ElMessage.error('重启失败任务出错')
+  }
+}
+
+async function fetchDashboardStats() {
+  try {
+    const [statsRes, alertRes] = await Promise.all([
+      systemAPI.getDashboardStats(),
+      alertAPI.getUnreadCount()
+    ])
+
+    if (statsRes.data.success) {
+      const data = statsRes.data.data
+      todayStats.collected = String(data.today_collected || 0)
+      todayStats.tasks = String((data.running_tasks || 0) + (data.pending_tasks || 0))
+      if (data.today_trend && Array.isArray(data.today_trend)) {
+        chartPoints.value = data.today_trend
+      }
+    }
+
+    if (alertRes.data.success) {
+      unreadAlertCount.value = alertRes.data.data?.count || 0
+    }
+  } catch (e) {
+    console.error('获取仪表盘数据失败:', e)
+  }
 }
 
 onMounted(() => {
   setTimeout(() => {
     loaded.value = true
   }, 100)
+  fetchDashboardStats()
 })
 </script>
 

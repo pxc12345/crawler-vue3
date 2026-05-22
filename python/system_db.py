@@ -120,7 +120,7 @@ class SystemDB:
             if conn:
                 conn.close()
 
-    def get_logs(self, level="", source="", page=1, page_size=50):
+    def get_logs(self, level="", source="", page=1, page_size=50, user_id=None):
         conn = None
         try:
             conn = pymysql.connect(**self._config)

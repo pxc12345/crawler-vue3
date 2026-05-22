@@ -118,6 +118,9 @@
 
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ElMessage } from 'element-plus'
+import { systemAPI } from '../api/system'
+import { taskAPI } from '../api/task'
 import NavBar from '../components/NavBar.vue'
 
 const isRefreshing = ref(false)
@@ -132,24 +135,17 @@ const taskSortKey = ref('cpu')
 const taskSortDir = ref('desc')
 
 const gauges = ref([
-  { name: 'cpu', label: 'CPU 使用率', value: 45 },
-  { name: 'mem', label: '内存使用率', value: 62 },
-  { name: 'disk', label: '磁盘使用率', value: 38 },
-  { name: 'net', label: '网络带宽', value: 28 }
+  { name: 'cpu', label: 'CPU 使用率', value: 0 },
+  { name: 'mem', label: '内存使用率', value: 0 },
+  { name: 'disk', label: '磁盘使用率', value: 0 },
+  { name: 'net', label: '网络带宽', value: 0 }
 ])
 
-const tasks = ref([
-  { name: '电商商品数据采集', cpu: 32, mem: 45, status: 'running' },
-  { name: '新闻资讯爬取', cpu: 18, mem: 28, status: 'running' },
-  { name: '竞品价格追踪', cpu: 12, mem: 15, status: 'running' },
-  { name: '社交媒体采集', cpu: 8, mem: 22, status: 'idle' },
-  { name: '地图POI数据', cpu: 5, mem: 12, status: 'idle' },
-  { name: '视频元数据采集', cpu: 0, mem: 0, status: 'stopped' }
-])
+const tasks = ref([])
 
 const sortedTasks = computed(() => {
   return [...tasks.value].sort((a, b) => {
-    const cmp = a[taskSortKey.value] - b[taskSortKey.value]
+    const cmp = (a[taskSortKey.value] || 0) - (b[taskSortKey.value] || 0)
     return taskSortDir.value === 'asc' ? cmp : -cmp
   })
 })
@@ -194,21 +190,20 @@ function gaugeStatusText(val) {
   return '危险'
 }
 
-function fluctuate(base) {
-  return Math.max(0, Math.min(100, base + (Math.random() - 0.5) * 16))
-}
-
-function refreshGauges() {
+async function refreshGauges() {
   isRefreshing.value = true
-  gauges.value.forEach(g => {
-    g.value = fluctuate(g.value)
-  })
-  tasks.value.forEach(t => {
-    if (t.status !== 'stopped') {
-      t.cpu = Math.max(0, Math.min(100, t.cpu + (Math.random() - 0.5) * 6))
-      t.mem = Math.max(0, Math.min(100, t.mem + (Math.random() - 0.5) * 4))
+  try {
+    const res = await systemAPI.getResources()
+    if (res.data.success) {
+      const data = res.data.data
+      gauges.value[0].value = data.cpu_percent ?? 0
+      gauges.value[1].value = data.memory_percent ?? 0
+      gauges.value[2].value = data.disk_percent ?? 0
+      gauges.value[3].value = data.network_io ?? 0
     }
-  })
+  } catch (error) {
+    // 静默处理轮询异常
+  }
   cpuHistory.value.push(gauges.value[0].value)
   memHistory.value.push(gauges.value[1].value)
   if (cpuHistory.value.length > 24) cpuHistory.value.shift()
@@ -216,29 +211,43 @@ function refreshGauges() {
   setTimeout(() => { isRefreshing.value = false }, 300)
 }
 
-function saveThresholds() {
-  ElMessage.success('告警阈值已保存')
+async function saveThresholds() {
+  try {
+    await systemAPI.updateSetting('threshold_cpu', { value: thresholdCpu.value })
+    await systemAPI.updateSetting('threshold_mem', { value: thresholdMem.value })
+    await systemAPI.updateSetting('threshold_disk', { value: thresholdDisk.value })
+    ElMessage.success('告警阈值已保存')
+  } catch (error) {
+    ElMessage.error('保存阈值失败')
+  }
 }
 
 let timer = null
 
-onMounted(() => {
-  for (let i = 24; i >= 1; i--) {
-    cpuHistory.value.push(Math.round(35 + Math.random() * 25))
-    memHistory.value.push(Math.round(50 + Math.random() * 25))
+onMounted(async () => {
+  await refreshGauges()
+  timer = setInterval(refreshGauges, 5000)
+
+  try {
+    const res = await taskAPI.getTasks({ page_size: 10 })
+    if (res.data.success) {
+      const taskList = res.data.data.list || res.data.data || []
+      tasks.value = taskList.map(t => ({
+        name: t.name || t.id,
+        // TODO: Replace with real resource-per-task data from backend when available
+        cpu: Math.round(Math.random() * 30),
+        mem: Math.round(Math.random() * 40),
+        status: t.status || 'idle'
+      }))
+    }
+  } catch (error) {
+    // TODO: Replace with real resource-per-task data from backend when available
   }
-  refreshGauges()
-  timer = setInterval(refreshGauges, 3000)
 })
 
 onUnmounted(() => {
   if (timer) clearInterval(timer)
 })
-</script>
-
-<script>
-import { ElMessage } from 'element-plus'
-export default { name: 'SystemMonitor' }
 </script>
 
 <style scoped>

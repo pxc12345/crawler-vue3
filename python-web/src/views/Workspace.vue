@@ -54,10 +54,10 @@
               <span class="fav-status" :class="fav.status === 'running' ? 's-run' : 's-stop'">{{ fav.status === 'running' ? '运行中' : '已停止' }}</span>
             </div>
             <h4 class="fav-name">{{ fav.name }}</h4>
-            <p class="fav-url">{{ fav.targetUrl }}</p>
+            <p class="fav-url">{{ fav.target_url || fav.targetUrl || '-' }}</p>
             <div class="fav-meta">
-              <span>{{ fav.lastRun }}</span>
-              <span>{{ fav.dataCount }} 条数据</span>
+              <span>{{ fav.last_run || fav.lastRun || '-' }}</span>
+              <span>{{ fav.data_count || fav.dataCount || 0 }} 条数据</span>
             </div>
             <button class="fav-start-btn" @click="quickStart(fav)">
               <svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
@@ -87,8 +87,11 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
+import { ElMessage } from 'element-plus'
 import { useRouter } from 'vue-router'
+import { taskAPI } from '../api/task'
+import { systemAPI } from '../api/system'
 import NavBar from '../components/NavBar.vue'
 
 const router = useRouter()
@@ -96,30 +99,72 @@ const router = useRouter()
 const username = ref('Admin')
 const userInitial = computed(() => username.value.charAt(0).toUpperCase())
 
-const totalTasks = ref(12)
+const totalTasks = ref(0)
 
-const favorites = ref([
-  { id: 1, name: '电商商品数据采集', targetUrl: 'https://shop.example.com', status: 'running', lastRun: '10分钟前', dataCount: 5200 },
-  { id: 2, name: '竞品价格追踪', targetUrl: 'https://competitor.com', status: 'stopped', lastRun: '2小时前', dataCount: 850 },
-  { id: 3, name: '新闻资讯爬取', targetUrl: 'https://news.example.com', status: 'running', lastRun: '5分钟前', dataCount: 1280 }
-])
+const favorites = ref([])
 
-const recentTasks = ref([
-  { id: 5, name: '竞品价格追踪', time: '10分钟前', action: '被修改' },
-  { id: 1, name: '电商商品数据采集', time: '28分钟前', action: '数据导出' },
-  { id: 3, name: '新闻资讯爬取', time: '1小时前', action: '执行完毕' },
-  { id: 9, name: '金融数据采集', time: '2小时前', action: '被创建' },
-  { id: 12, name: '社交媒体采集', time: '3小时前', action: '配置更新' }
-])
+const recentTasks = ref([])
 
-function quickStart(fav) {
-  ElMessage.success(`任务「${fav.name}」已启动`)
+async function quickStart(fav) {
+  try {
+    await taskAPI.startTask(fav.id)
+    ElMessage.success(`任务「${fav.name}」已启动`)
+  } catch (error) {
+    ElMessage.error('启动任务失败')
+  }
 }
-</script>
 
-<script>
-import { ElMessage } from 'element-plus'
-export default { name: 'Workspace' }
+async function fetchFavorites() {
+  try {
+    const res = await taskAPI.getFavorites()
+    if (res.data.success) {
+      favorites.value = res.data.data || []
+    }
+  } catch (error) {
+    // 静默处理
+  }
+}
+
+async function fetchRecentTasks() {
+  try {
+    const res = await taskAPI.getTasks({ page_size: 5 })
+    if (res.data.success) {
+      const list = res.data.data.list || res.data.data || []
+      recentTasks.value = list.map(t => ({
+        id: t.id,
+        name: t.name || '未知任务',
+        time: t.updated_at || t.time || '-',
+        action: t.last_action || '被修改'
+      }))
+    }
+  } catch (error) {
+    // 静默处理
+  }
+}
+
+async function fetchStats() {
+  try {
+    const res = await systemAPI.getDashboardStats()
+    if (res.data.success) {
+      totalTasks.value = res.data.data.total_tasks || 0
+    }
+  } catch (error) {
+    try {
+      const res = await taskAPI.getTasks({ page_size: 1 })
+      if (res.data.success) {
+        totalTasks.value = res.data.data.total || 0
+      }
+    } catch (e) {
+      totalTasks.value = 0
+    }
+  }
+}
+
+onMounted(() => {
+  fetchFavorites()
+  fetchRecentTasks()
+  fetchStats()
+})
 </script>
 
 <style scoped>

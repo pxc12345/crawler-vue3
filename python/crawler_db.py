@@ -234,5 +234,47 @@ class CrawlerDB:
             if conn:
                 conn.close()
 
+    def get_stats(self):
+        """获取统计信息：总数据条数"""
+        return {
+            "total_count": self.get_count()
+        }
+
+    def get_today_stats(self):
+        """获取今日统计数据：今日总数和每小时分组统计"""
+        conn = None
+        try:
+            conn = pymysql.connect(**self._config)
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    "SELECT COUNT(*) AS total FROM `crawler_data` "
+                    "WHERE DATE(`collected_at`) = CURDATE()"
+                )
+                total = cursor.fetchone()["total"]
+
+                hourly = [0] * 24
+                cursor.execute(
+                    "SELECT HOUR(`collected_at`) AS h, COUNT(*) AS cnt "
+                    "FROM `crawler_data` "
+                    "WHERE DATE(`collected_at`) = CURDATE() "
+                    "GROUP BY HOUR(`collected_at`) "
+                    "ORDER BY h"
+                )
+                for row in cursor.fetchall():
+                    h = row["h"]
+                    if 0 <= h < 24:
+                        hourly[h] = row["cnt"]
+
+                return {
+                    "today_total": total,
+                    "hourly_breakdown": hourly
+                }
+        except pymysql.Error as e:
+            print(f"查询今日统计失败: {e}")
+            return {"today_total": 0, "hourly_breakdown": [0] * 24}
+        finally:
+            if conn:
+                conn.close()
+
 
 crawler_db = CrawlerDB()

@@ -37,6 +37,7 @@
               type="text"
               class="search-input"
               placeholder="搜索任务名称或URL..."
+              @keyup.enter="handleSearch"
             />
           </div>
         </div>
@@ -118,10 +119,10 @@
           <div class="task-card-progress">
             <div class="progress-header">
               <span class="progress-label">成功率</span>
-              <span class="progress-value" :class="task.successRate >= 90 ? 'high' : task.successRate >= 60 ? 'mid' : 'low'">{{ task.successRate }}%</span>
+              <span class="progress-value" :class="task.status === 'completed' ? 'high' : task.successRate >= 90 ? 'high' : task.successRate >= 60 ? 'mid' : 'low'">{{ task.successRate }}%</span>
             </div>
             <div class="progress-bar">
-              <div class="progress-fill" :class="task.successRate >= 90 ? 'high' : task.successRate >= 60 ? 'mid' : 'low'" :style="{ width: task.successRate + '%' }"></div>
+              <div class="progress-fill" :class="task.status === 'completed' ? 'high' : task.successRate >= 90 ? 'high' : task.successRate >= 60 ? 'mid' : 'low'" :style="{ width: Math.max(task.successRate, 2) + '%' }"></div>
             </div>
           </div>
 
@@ -176,11 +177,14 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import NavBar from '../components/NavBar.vue'
+import { taskAPI } from '../api/task'
 
 const loading = ref(true)
 const tasks = ref([])
+const total = ref(0)
 const searchKeyword = ref('')
 const activeStatus = ref('all')
 const currentPage = ref(1)
@@ -197,62 +201,159 @@ const statusOptions = [
 const statusLabelMap = { running: '运行中', pending: '待执行', completed: '已完成', failed: '失败' }
 function statusLabel(status) { return statusLabelMap[status] || status }
 
-const filteredTasks = computed(() => {
-  let result = tasks.value
-  if (activeStatus.value !== 'all') {
-    result = result.filter(t => t.status === activeStatus.value)
-  }
-  if (searchKeyword.value.trim()) {
-    const kw = searchKeyword.value.toLowerCase()
-    result = result.filter(t => t.name.toLowerCase().includes(kw) || t.url.toLowerCase().includes(kw))
-  }
-  return result
+// 监听筛选条件变化，自动重新获取数据
+watch(activeStatus, () => {
+  currentPage.value = 1
+  fetchTasks()
 })
 
-const totalPages = computed(() => Math.max(1, Math.ceil(filteredTasks.value.length / pageSize)))
+const filteredTasks = computed(() => {
+  return tasks.value
+})
+
+const totalPages = computed(() => Math.max(1, Math.ceil(total.value / pageSize)))
 
 const paginatedTasks = computed(() => {
-  const start = (currentPage.value - 1) * pageSize
-  return filteredTasks.value.slice(start, start + pageSize)
+  return tasks.value
 })
 
-function toggleFavorite(task) {
-  task.favorite = !task.favorite
+function handleSearch() {
+  currentPage.value = 1
+  fetchTasks()
 }
 
-function toggleTaskStatus(task) {
-  if (task.status === 'running') {
-    task.status = 'pending'
-  } else {
-    task.status = 'running'
+async function toggleFavorite(task) {
+  try {
+    const isFav = task.is_favorite || task.favorite
+    let res
+    if (isFav) {
+      res = await taskAPI.removeFavorite(task.id)
+    } else {
+      res = await taskAPI.addFavorite(task.id)
+    }
+    if (res.data.success) {
+      task.is_favorite = !isFav
+      task.favorite = !isFav
+      ElMessage.success(res.data.message)
+    } else {
+      ElMessage.error(res.data.message)
+    }
+  } catch (e) {
+    ElMessage.error('操作失败')
   }
 }
 
-function deleteTask(task) {
-  const confirmed = window.confirm(`确定要删除任务「${task.name}」吗？此操作不可撤销。`)
-  if (confirmed) {
-    tasks.value = tasks.value.filter(t => t.id !== task.id)
+async function toggleTaskStatus(task) {
+  try {
+    let res
+    if (task.status === 'running') {
+      res = await taskAPI.stopTask(task.id)
+      if (res.data.success) {
+        task.status = 'pending'
+        ElMessage.success('任务已停止')
+      } else {
+        ElMessage.error(res.data.message)
+      }
+    } else {
+      res = await taskAPI.startTask(task.id)
+      if (res.data.success) {
+        task.status = 'running'
+        ElMessage.success('任务已启动')
+      } else {
+        ElMessage.error(res.data.message)
+      }
+    }
+  } catch (e) {
+    ElMessage.error('操作失败')
+  }
+}
+
+async function deleteTask(task) {
+  try {
+    await ElMessageBox.confirm(
+      `确定要删除任务「${task.name}」吗？此操作不可撤销。`,
+      '确认删除',
+      { confirmButtonText: '确定', cancelButtonText: '取消', type: 'warning' }
+    )
+    const res = await taskAPI.deleteTask(task.id)
+    if (res.data.success) {
+      tasks.value = tasks.value.filter(t => t.id !== task.id)
+      total.value = Math.max(0, total.value - 1)
+      ElMessage.success('删除成功')
+    } else {
+      ElMessage.error(res.data.message)
+    }
+  } catch (e) {
+    if (e !== 'cancel' && e !== 'close') {
+      ElMessage.error('删除失败')
+    }
+  }
+}
+
+function mapTaskFromApi(item) {
+  const crawlerStatus = item.crawler_status || {}
+  const elapsed = item.execution_time || crawlerStatus.elapsed_seconds || 0
+  const hours = Math.floor(elapsed / 3600)
+  const minutes = Math.floor((elapsed % 3600) / 60)
+  const seconds = elapsed % 60
+  let executionTime
+  if (hours > 0) {
+    executionTime = `${hours}h ${minutes}m`
+  } else if (minutes > 0) {
+    executionTime = `${minutes}m ${seconds}s`
+  } else {
+    executionTime = `${seconds}s`
+  }
+
+  // 计算成功率：优先使用数据库值，否则根据状态推断
+  let successRate = item.success_rate || 0
+  if (successRate === 0 && item.status === 'completed') {
+    successRate = 100
+  }
+
+  return {
+    id: item.id,
+    name: item.name,
+    url: item.target_url || item.url || '',
+    status: (item.status || 'pending').toLowerCase(),
+    executionTime: executionTime,
+    dataCount: item.data_count || crawlerStatus.collected_count || 0,
+    successRate: successRate,
+    favorite: item.is_favorite === 1 || item.is_favorite === true || item.favorite === true,
+    is_favorite: item.is_favorite === 1 || item.is_favorite === true || item.favorite === true
   }
 }
 
 async function fetchTasks() {
   loading.value = true
-  await new Promise(r => setTimeout(r, 600))
-  tasks.value = [
-    { id: 1, name: '电商商品数据采集', url: 'https://example-shop.com/products', status: 'running', executionTime: '2h 15m', dataCount: 4820, successRate: 98.5, favorite: true },
-    { id: 2, name: '新闻资讯爬取', url: 'https://news-portal.com/latest', status: 'pending', executionTime: '0h 0m', dataCount: 0, successRate: 0, favorite: false },
-    { id: 3, name: '社交媒体评论采集', url: 'https://social-media.com/posts', status: 'running', executionTime: '1h 08m', dataCount: 2150, successRate: 87.3, favorite: true },
-    { id: 4, name: '房价数据监控', url: 'https://housing-data.com/listings', status: 'completed', executionTime: '4h 32m', dataCount: 12350, successRate: 99.1, favorite: false },
-    { id: 5, name: '竞品价格追踪', url: 'https://competitor-prices.com/catalog', status: 'failed', executionTime: '0h 45m', dataCount: 320, successRate: 28.6, favorite: false },
-    { id: 6, name: '天气数据采集', url: 'https://weather-api.com/forecast', status: 'completed', executionTime: '0h 18m', dataCount: 9600, successRate: 100, favorite: true },
-    { id: 7, name: '论文摘要爬取', url: 'https://academic-db.com/papers', status: 'pending', executionTime: '0h 0m', dataCount: 0, successRate: 0, favorite: false },
-    { id: 8, name: '招聘信息汇总', url: 'https://jobs-board.com/listings', status: 'running', executionTime: '3h 05m', dataCount: 3400, successRate: 92.7, favorite: false },
-    { id: 9, name: '金融数据采集', url: 'https://finance-data.com/markets', status: 'failed', executionTime: '1h 20m', dataCount: 150, successRate: 15.2, favorite: false },
-    { id: 10, name: '视频元数据采集', url: 'https://video-platform.com/api', status: 'completed', executionTime: '2h 50m', dataCount: 7800, successRate: 96.8, favorite: true },
-    { id: 11, name: '商品评论爬取', url: 'https://review-site.com/products', status: 'pending', executionTime: '0h 0m', dataCount: 0, successRate: 0, favorite: false },
-    { id: 12, name: '地图POI数据', url: 'https://map-service.com/poi', status: 'running', executionTime: '5h 12m', dataCount: 25600, successRate: 94.3, favorite: false }
-  ]
-  loading.value = false
+  try {
+    const params = {
+      page: currentPage.value,
+      page_size: pageSize
+    }
+    if (activeStatus.value !== 'all') {
+      params.status = activeStatus.value
+    }
+    if (searchKeyword.value.trim()) {
+      params.keyword = searchKeyword.value.trim()
+    }
+    const res = await taskAPI.getTasks(params)
+    if (res.data.success) {
+      const data = res.data.data
+      tasks.value = (data.list || []).map(mapTaskFromApi)
+      total.value = data.total || 0
+    } else {
+      ElMessage.error(res.data.message || '获取任务列表失败')
+      tasks.value = []
+      total.value = 0
+    }
+  } catch (e) {
+    console.error('获取任务列表失败:', e)
+    tasks.value = []
+    total.value = 0
+  } finally {
+    loading.value = false
+  }
 }
 
 onMounted(() => {
@@ -630,11 +731,39 @@ onMounted(() => {
 }
 
 .status-completed {
-  background: rgba(255, 255, 255, 0.05);
-  color: rgba(255, 255, 255, 0.4);
+  background: rgba(46, 204, 113, 0.15);
+  color: #2ecc71;
+  border: 1px solid rgba(46, 204, 113, 0.3);
 }
 .status-completed .status-dot {
-  background: rgba(255, 255, 255, 0.35);
+  background: #2ecc71;
+}
+
+.status-running {
+  background: rgba(52, 152, 219, 0.15);
+  color: #3498db;
+  border: 1px solid rgba(52, 152, 219, 0.3);
+}
+.status-running .status-dot {
+  background: #3498db;
+}
+
+.status-pending {
+  background: rgba(155, 89, 182, 0.15);
+  color: #9b59b6;
+  border: 1px solid rgba(155, 89, 182, 0.3);
+}
+.status-pending .status-dot {
+  background: #9b59b6;
+}
+
+.status-failed {
+  background: rgba(231, 76, 60, 0.15);
+  color: #e74c3c;
+  border: 1px solid rgba(231, 76, 60, 0.3);
+}
+.status-failed .status-dot {
+  background: #e74c3c;
 }
 
 .status-failed {

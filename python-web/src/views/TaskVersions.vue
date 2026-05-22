@@ -161,11 +161,13 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import NavBar from '../components/NavBar.vue'
+import { taskAPI } from '../api/task'
+import { ElMessage, ElMessageBox } from 'element-plus'
 
 const route = useRoute()
 const router = useRouter()
 const loading = ref(true)
-const taskName = ref('电商商品数据采集')
+const taskName = ref('')
 const showRollbackModal = ref(false)
 const rollbackTarget = ref(null)
 const comparedVersions = ref([])
@@ -193,13 +195,21 @@ function rollbackVersion(ver) {
   showRollbackModal.value = true
 }
 
-function confirmRollback() {
-  if (rollbackTarget.value) {
-    versions.value.forEach(v => { v.isCurrent = false })
-    rollbackTarget.value.isCurrent = true
+async function confirmRollback() {
+  if (!rollbackTarget.value) return
+  try {
+    const res = await taskAPI.rollbackVersion(route.params.id, rollbackTarget.value.id)
+    if (res.data.success) {
+      ElMessage.success('回滚成功')
+      showRollbackModal.value = false
+      rollbackTarget.value = null
+      fetchVersions()
+    } else {
+      ElMessage.error(res.data.message || '回滚失败')
+    }
+  } catch (e) {
+    ElMessage.error('回滚失败')
   }
-  showRollbackModal.value = false
-  rollbackTarget.value = null
 }
 
 function toggleCompare(ver) {
@@ -214,50 +224,67 @@ function toggleCompare(ver) {
   }
 }
 
+function mapVersionFromApi(item, maxVersionIndex) {
+  let config = item.config
+  if (typeof config === 'string') {
+    try { config = JSON.parse(config) } catch (e) { config = {} }
+  }
+  config = config || {}
+  let changes = []
+  if (item.change_log) {
+    if (typeof item.change_log === 'string') {
+      changes = item.change_log.split('\n').filter(c => c.trim())
+    } else {
+      changes = Array.isArray(item.change_log) ? item.change_log : [item.change_log]
+    }
+  }
+  return {
+    id: item.id,
+    version: item.version_index,
+    isCurrent: item.version_index === maxVersionIndex,
+    time: item.created_at || '',
+    author: item.author || '',
+    cron: config.cron_expr || config.cron || '',
+    concurrency: config.concurrency || 0,
+    interval: config.interval || 0,
+    name: config.name || '',
+    changes: changes
+  }
+}
+
+async function fetchTaskName() {
+  try {
+    const res = await taskAPI.getTask(route.params.id)
+    if (res.data.success && res.data.data) {
+      taskName.value = res.data.data.name || ''
+    }
+  } catch (e) {
+    // silent
+  }
+}
+
 async function fetchVersions() {
   loading.value = true
-  await new Promise(r => setTimeout(r, 500))
-  versions.value = [
-    {
-      id: 5, version: 5, isCurrent: true,
-      time: '2026-05-21 10:30', author: 'admin',
-      cron: '0 */4 * * *', concurrency: 8, interval: 1500,
-      name: '电商商品数据采集',
-      changes: ['增加并发数从 5 到 8', '减少请求间隔从 2000ms 到 1500ms', '修改 Cron 表达式为每4小时执行']
-    },
-    {
-      id: 4, version: 4, isCurrent: false,
-      time: '2026-05-18 14:20', author: 'admin',
-      cron: '0 */6 * * *', concurrency: 5, interval: 2000,
-      name: '电商商品数据采集',
-      changes: ['新增数据去重逻辑', '添加 User-Agent 轮换策略', '优化分页处理性能']
-    },
-    {
-      id: 3, version: 3, isCurrent: false,
-      time: '2026-05-10 09:00', author: 'dev_user',
-      cron: '0 */6 * * *', concurrency: 3, interval: 3000,
-      name: '电商商品数据采集',
-      changes: ['增加最大重试次数到 3', '添加请求延迟检测功能', '修复商品详情页解析Bug']
-    },
-    {
-      id: 2, version: 2, isCurrent: false,
-      time: '2026-04-25 16:45', author: 'admin',
-      cron: '0 */8 * * *', concurrency: 3, interval: 3000,
-      name: '电商商品数据采集V2',
-      changes: ['调整 Cron 为每8小时执行', '增加代理IP自动切换功能', '重命名任务为"电商商品数据采集V2"']
-    },
-    {
-      id: 1, version: 1, isCurrent: false,
-      time: '2026-04-01 11:00', author: 'admin',
-      cron: '0 */12 * * *', concurrency: 2, interval: 5000,
-      name: '电商平台商品信息采集',
-      changes: ['初始版本', '实现基本商品列表采集', '支持单页面数据提取']
+  try {
+    const res = await taskAPI.getVersions(route.params.id)
+    if (res.data.success) {
+      const data = res.data.data || []
+      const maxVersion = data.reduce((max, v) => Math.max(max, v.version_index || 0), 0)
+      versions.value = data.map(item => mapVersionFromApi(item, maxVersion))
+    } else {
+      ElMessage.error(res.data.message || '获取版本列表失败')
+      versions.value = []
     }
-  ]
-  loading.value = false
+  } catch (e) {
+    ElMessage.error('获取版本列表失败')
+    versions.value = []
+  } finally {
+    loading.value = false
+  }
 }
 
 onMounted(() => {
+  fetchTaskName()
   fetchVersions()
 })
 </script>

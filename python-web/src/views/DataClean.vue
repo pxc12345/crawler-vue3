@@ -125,7 +125,9 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, onMounted } from 'vue'
+import { ElMessage } from 'element-plus'
+import { dataAPI } from '../api/data'
 import NavBar from '../components/NavBar.vue'
 
 const processing = ref(false)
@@ -144,25 +146,7 @@ const formatResult = ref('')
 const rawData = ref([])
 const previewData = ref([])
 
-const mockData = [
-  { title: '智能手机市场分析报告', link: 'https://example.com/report/phones', content: '2024年全球智能手机出货量同比增长6.5%', source_url: 'https://research.example.com', collected_at: '2024-06-15 14:30:22' },
-  { title: '智能手机市场分析报告', link: 'https://example.com/report/phones', content: '2024年全球智能手机出货量同比增长6.5%', source_url: 'https://research.example.com', collected_at: '2024-06-15 14:30:22' },
-  { title: '新能源汽车政策解读', link: 'https://example.com/news/ev', content: '财政部发布最新新能源汽车补贴方案', source_url: 'https://gov.example.com', collected_at: '2024-06-15 13:22:10' },
-  { title: '', link: 'https://cdn.example.com/img/logo.png', content: '', source_url: 'https://brands.example.com', collected_at: '2024-06-15 12:08:45' },
-  { title: 'PyTorch 2.4正式发布', link: 'https://example.com/tech/pytorch', content: 'PyTorch 2.4版本带来全新优化', source_url: 'https://dev.example.com', collected_at: '2024-06-15 11:44:33' },
-  { title: '长三角房价走势', link: 'https://example.com/data/housing', content: '四城新建商品住宅价格指数环比上涨', source_url: 'https://stats.example.com', collected_at: '2024-06-15 10:15:00' },
-  { title: '', link: '', content: '数据缺失的行', source_url: 'https://unknown.example.com', collected_at: '2024-06-15 09:30:12' },
-  { title: 'AI大模型实践白皮书', link: 'https://example.com/reports/ai', content: '  调研了200+企业AI落地案例  ', source_url: 'https://ai.example.com', collected_at: '1718340164' },
-  { title: '汽车产业报告', link: 'https://example.com/report/cars', content: '新能源汽车渗透率达到40%', source_url: 'https://auto.example.com', collected_at: '2024-06-14 18:22:44' },
-  { title: '新能源汽车政策解读', link: 'https://example.com/news/ev', content: '财政部发布最新新能源汽车补贴方案', source_url: 'https://gov.example.com', collected_at: '2024-06-15 13:22:10' },
-  { title: '跨境支付指南', link: 'https://example.com/guides/payment', content: '跨境电商企业支付合规手册', source_url: 'https://fintech.example.com', collected_at: '2024-06-14 16:05:21' },
-  { title: 'K8S集群优化方案', link: 'https://example.com/tech/k8s', content: '  KUBERNETES PERFORMANCE TUNING  ', source_url: 'https://cloud.example.com', collected_at: '2024-06-14 15:00:00' },
-  { title: '竞品监测截图包', link: 'https://cdn.example.com/comp.zip', content: '15家竞品平台价格监测截图', source_url: 'https://monitor.example.com', collected_at: '2024-06-14 14:22:18' },
-  { title: '', link: 'https://example.com/no-title', content: '缺少标题字段的数据', source_url: 'https://orphan.example.com', collected_at: '2024-06-14 13:11:05' },
-  { title: '电商大促分析', link: 'https://example.com/insights/sale', content: '双十一促销策略分析预测', source_url: 'https://ecommerce.example.com', collected_at: '2024-06-14 12:00:00' },
-]
-
-function runDedup() {
+async function runDedup() {
   activeOp.value = 'dedup'
   processing.value = true
   progressPercent.value = 0
@@ -170,24 +154,24 @@ function runDedup() {
     progressPercent.value = Math.min(100, progressPercent.value + 25)
     if (progressPercent.value >= 100) clearInterval(interval)
   }, 150)
-  setTimeout(() => {
-    const before = previewData.value.length
-    const seen = new Set()
-    previewData.value = previewData.value.filter(row => {
-      const key = row.title + '|' + row.link + '|' + row.content
-      if (seen.has(key)) return false
-      seen.add(key)
-      return true
-    })
-    const removed = before - previewData.value.length
-    dedupResult.value = `已去除 ${removed} 条重复数据`
-    hasChanges.value = removed > 0
+  try {
+    const res = await dataAPI.cleanData({ operation: 'deduplicate', data: previewData.value })
+    if (res.data.success) {
+      const before = previewData.value.length
+      previewData.value = res.data.data || res.data.data.list || []
+      const removed = before - previewData.value.length
+      dedupResult.value = `已去除 ${removed} 条重复数据`
+      hasChanges.value = removed > 0
+    }
+  } catch (error) {
+    ElMessage.error('去重操作失败')
+  } finally {
     processing.value = false
     progressPercent.value = 0
-  }, 800)
+  }
 }
 
-function runNullFilter() {
+async function runNullFilter() {
   activeOp.value = 'nullFilter'
   processing.value = true
   progressPercent.value = 0
@@ -195,20 +179,28 @@ function runNullFilter() {
     progressPercent.value = Math.min(100, progressPercent.value + 30)
     if (progressPercent.value >= 100) clearInterval(interval)
   }, 120)
-  setTimeout(() => {
-    const before = previewData.value.length
-    previewData.value = previewData.value.filter(row => {
-      return row[nullFilterField.value] && row[nullFilterField.value].trim() !== ''
+  try {
+    const res = await dataAPI.cleanData({
+      operation: 'filter_empty',
+      data: previewData.value,
+      fields: [nullFilterField.value]
     })
-    const removed = before - previewData.value.length
-    nullFilterResult.value = `已过滤 ${removed} 条空值数据`
-    hasChanges.value = removed > 0
+    if (res.data.success) {
+      const before = previewData.value.length
+      previewData.value = res.data.data || res.data.data.list || []
+      const removed = before - previewData.value.length
+      nullFilterResult.value = `已过滤 ${removed} 条空值数据`
+      hasChanges.value = removed > 0
+    }
+  } catch (error) {
+    ElMessage.error('空值过滤失败')
+  } finally {
     processing.value = false
     progressPercent.value = 0
-  }, 500)
+  }
 }
 
-function runFormat() {
+async function runFormat() {
   activeOp.value = 'format'
   processing.value = true
   progressPercent.value = 0
@@ -216,27 +208,29 @@ function runFormat() {
     progressPercent.value = Math.min(100, progressPercent.value + 20)
     if (progressPercent.value >= 100) clearInterval(interval)
   }, 100)
-  setTimeout(() => {
-    let count = 0
-    previewData.value = previewData.value.map(row => {
-      const val = row[formatField.value]
-      if (!val) return row
-      let newVal = val
-      if (formatType.value === 'trim') { newVal = val.trim() }
-      else if (formatType.value === 'lowercase') { newVal = val.toLowerCase() }
-      else if (formatType.value === 'uppercase') { newVal = val.toUpperCase() }
-      else if (formatType.value === 'timestamp') { newVal = new Date(parseInt(val) * 1000).toLocaleString('zh-CN') }
-      if (newVal !== val) {
-        count++
-        return { ...row, [formatField.value]: newVal }
-      }
-      return row
+  try {
+    const res = await dataAPI.cleanData({
+      operation: 'format_convert',
+      data: previewData.value,
+      field: formatField.value,
+      format: formatType.value === 'timestamp' ? 'timestamp_to_date' : formatType.value
     })
-    formatResult.value = `已转换 ${count} 条数据的字段格式`
-    hasChanges.value = count > 0
+    if (res.data.success) {
+      const resultData = res.data.data || res.data.data.list || []
+      let count = 0
+      previewData.value.forEach((row, idx) => {
+        if (JSON.stringify(row) !== JSON.stringify(resultData[idx])) count++
+      })
+      previewData.value = resultData
+      formatResult.value = `已转换 ${count} 条数据的字段格式`
+      hasChanges.value = count > 0
+    }
+  } catch (error) {
+    ElMessage.error('格式转换失败')
+  } finally {
     processing.value = false
     progressPercent.value = 0
-  }, 700)
+  }
 }
 
 function applyChanges() {
@@ -259,27 +253,17 @@ function resetData() {
   ElMessage.info('已恢复原始数据')
 }
 
-onMounted(() => {
-  rawData.value = mockData.map(r => ({ ...r }))
-  previewData.value = rawData.value.map(r => ({ ...r }))
-  dedupResult.value = `检测到 ${countDuplicates()} 条疑似重复数据`
+onMounted(async () => {
+  try {
+    const res = await dataAPI.getDataList({ page_size: 50 })
+    if (res.data.success) {
+      rawData.value = (res.data.data.list || res.data.data || []).map(r => ({ ...r }))
+      previewData.value = rawData.value.map(r => ({ ...r }))
+    }
+  } catch (error) {
+    ElMessage.error('加载数据失败')
+  }
 })
-
-function countDuplicates() {
-  const seen = new Set()
-  let dupes = 0
-  rawData.value.forEach(row => {
-    const key = row.title + '|' + row.link + '|' + row.content
-    if (seen.has(key)) dupes++
-    else seen.add(key)
-  })
-  return dupes
-}
-</script>
-
-<script>
-import { ElMessage } from 'element-plus'
-export default { name: 'DataClean' }
 </script>
 
 <style scoped>

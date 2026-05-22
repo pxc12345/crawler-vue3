@@ -121,7 +121,9 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
+import { ElMessage } from 'element-plus'
+import { systemAPI } from '../api/system'
 import NavBar from '../components/NavBar.vue'
 
 const activeTab = ref('preference')
@@ -149,22 +151,88 @@ const globalProxyRefresh = ref(60)
 const globalReqInterval = ref(2000)
 const globalConcurrency = ref(5)
 
-function savePreference() {
-  ElMessage.success('个人偏好已保存')
+async function savePreference() {
+  try {
+    await systemAPI.saveUserPreferences({
+      theme: isDark.value ? 'dark' : 'light',
+      export_path: prefExportPath.value,
+      language: prefLang.value
+    })
+    ElMessage.success('个人偏好已保存')
+  } catch (error) {
+    ElMessage.error('保存偏好失败')
+  }
 }
 
-function saveNotification() {
-  ElMessage.success('通知设置已保存')
+async function saveNotification() {
+  try {
+    await systemAPI.saveUserPreferences({
+      notif_task_fail: notifTaskFail.value,
+      notif_timeout: notifTimeout.value,
+      notif_data_error: notifDataError.value,
+      notif_ip_blocked: notifIpBlocked.value,
+      notif_system: notifSystem.value,
+      notif_email: notifEmail.value,
+      notif_wechat: notifWechat.value
+    })
+    ElMessage.success('通知设置已保存')
+  } catch (error) {
+    ElMessage.error('保存通知设置失败')
+  }
 }
 
-function saveGlobal() {
-  ElMessage.success('全局配置已保存')
+async function saveGlobal() {
+  try {
+    await systemAPI.updateSetting('log_retention_days', { value: globalLogDays.value })
+    await systemAPI.updateSetting('proxy_refresh_interval', { value: globalProxyRefresh.value })
+    await systemAPI.updateSetting('default_request_interval', { value: globalReqInterval.value })
+    await systemAPI.updateSetting('default_concurrency', { value: globalConcurrency.value })
+    ElMessage.success('全局配置已保存')
+  } catch (error) {
+    ElMessage.error('保存全局配置失败')
+  }
 }
-</script>
 
-<script>
-import { ElMessage } from 'element-plus'
-export default { name: 'Settings' }
+async function loadSettings() {
+  try {
+    const res = await systemAPI.getSettings()
+    if (res.data.success) {
+      const settings = res.data.data || {}
+      if (settings.log_retention_days) globalLogDays.value = settings.log_retention_days
+      if (settings.proxy_refresh_interval) globalProxyRefresh.value = settings.proxy_refresh_interval
+      if (settings.default_request_interval) globalReqInterval.value = settings.default_request_interval
+      if (settings.default_concurrency) globalConcurrency.value = settings.default_concurrency
+    }
+  } catch (error) {
+    // 静默处理
+  }
+}
+
+async function loadPreferences() {
+  try {
+    const res = await systemAPI.getUserPreferences()
+    if (res.data.success) {
+      const prefs = res.data.data || {}
+      if (prefs.theme) isDark.value = prefs.theme === 'dark'
+      if (prefs.export_path) prefExportPath.value = prefs.export_path
+      if (prefs.language) prefLang.value = prefs.language
+      if (prefs.notif_task_fail !== undefined) notifTaskFail.value = prefs.notif_task_fail
+      if (prefs.notif_timeout !== undefined) notifTimeout.value = prefs.notif_timeout
+      if (prefs.notif_data_error !== undefined) notifDataError.value = prefs.notif_data_error
+      if (prefs.notif_ip_blocked !== undefined) notifIpBlocked.value = prefs.notif_ip_blocked
+      if (prefs.notif_system !== undefined) notifSystem.value = prefs.notif_system
+      if (prefs.notif_email !== undefined) notifEmail.value = prefs.notif_email
+      if (prefs.notif_wechat !== undefined) notifWechat.value = prefs.notif_wechat
+    }
+  } catch (error) {
+    // 静默处理
+  }
+}
+
+onMounted(() => {
+  loadSettings()
+  loadPreferences()
+})
 </script>
 
 <style scoped>

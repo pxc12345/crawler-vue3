@@ -224,7 +224,10 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
+import { ElMessage } from 'element-plus'
+import { dataAPI } from '../api/data'
+import api from '../api/index'
 import NavBar from '../components/NavBar.vue'
 
 const exportFormat = ref('csv')
@@ -264,20 +267,14 @@ const availFields = ref([
   { key: 'collected_at', label: '采集时间', selected: true }
 ])
 
-const taskOptions = ['竞品价格追踪', '电商商品数据采集', '新闻资讯爬取', '社交媒体采集']
+const taskOptions = ref([])
 
-const previewData = [
-  { title: '智能手机市场分析报告', link: 'https://example.com/report/phones', content: '2024年全球智能手机出货量增长...', source_url: 'https://research.example.com', type: 'link', page_number: 1, collected_at: '2024-06-15 14:30:22' },
-  { title: '新能源汽车政策解读', link: 'https://example.com/news/ev', content: '财政部发布最新补贴方案...', source_url: 'https://gov.example.com', type: 'link', page_number: 1, collected_at: '2024-06-15 13:22:10' },
-  { title: 'AI大模型白皮书', link: 'https://example.com/reports/ai', content: '200+企业AI落地案例...', source_url: 'https://ai.example.com', type: 'link', page_number: 2, collected_at: '2024-06-14 18:22:44' },
-  { title: '跨境支付指南', link: 'https://example.com/guides/pay', content: '支付合规手册...', source_url: 'https://fintech.example.com', type: 'link', page_number: 1, collected_at: '2024-06-14 16:05:21' },
-  { title: 'K8S优化方案', link: 'https://example.com/tech/k8s', content: '性能调优方案...', source_url: 'https://cloud.example.com', type: 'link', page_number: 3, collected_at: '2024-06-14 15:00:00' }
-]
+const previewData = ref([])
 
 const selectedFields = computed(() => availFields.value.filter(f => f.selected).map(f => f.key))
 
 const previewRows = computed(() => {
-  return previewData.slice(0, 5).map(row => {
+  return previewData.value.slice(0, 5).map(row => {
     const r = {}
     selectedFields.value.forEach(k => { r[k] = row[k] || '-' })
     return r
@@ -286,24 +283,49 @@ const previewRows = computed(() => {
 
 const emailSubject = computed(() => `[CrawlMaster] 数据导出报告 - ${new Date().toLocaleDateString('zh-CN')}`)
 
-function testConnection() {
-  ElMessage.success('数据库连接测试成功')
+async function testConnection() {
+  try {
+    await dataAPI.autoWriteConfig({
+      db_type: dbType.value,
+      host: dbHost.value,
+      port: dbPort.value,
+      user: dbUser.value,
+      password: dbPass.value,
+      database: dbName.value,
+      table: dbTable.value,
+      auto_write: autoWriteEnabled.value
+    })
+    ElMessage.success('数据库连接测试成功')
+  } catch (error) {
+    ElMessage.error('数据库连接测试失败')
+  }
 }
 
-function doExport() {
+async function doExport() {
   exporting.value = true
   exportSuccess.value = false
-  setTimeout(() => {
+  try {
+    const exportUrl = api.defaults.baseURL + '/data/export?format=' + exportFormat.value + '&fields=' + selectedFields.value.join(',')
+    window.open(exportUrl)
     exporting.value = false
     exportSuccess.value = true
     ElMessage.success('数据导出成功')
-  }, 1500)
+  } catch (error) {
+    exporting.value = false
+    ElMessage.error('导出失败，请重试')
+  }
 }
-</script>
 
-<script>
-import { ElMessage } from 'element-plus'
-export default { name: 'DataExport' }
+onMounted(async () => {
+  try {
+    const res = await dataAPI.getDataList({ page_size: 5 })
+    if (res.data.success) {
+      previewData.value = res.data.data.list || res.data.data || []
+    }
+  } catch (error) {
+    previewData.value = []
+  }
+})
 </script>
 
 <style scoped>

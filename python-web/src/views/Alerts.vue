@@ -136,13 +136,17 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import NavBar from '../components/NavBar.vue'
+import { alertAPI } from '../api/alert'
+import { ElMessage } from 'element-plus'
 
 const router = useRouter()
 const loading = ref(true)
 const alerts = ref([])
+const total = ref(0)
+const unreadCount = ref(0)
 const activeType = ref('all')
 const showUnreadOnly = ref(false)
 const currentPage = ref(1)
@@ -157,39 +161,38 @@ const typeOptions = [
   { label: 'IP被封', value: 'ip_blocked' }
 ]
 
-const unreadCount = computed(() => alerts.value.filter(a => !a.read).length)
+const filteredAlerts = computed(() => alerts.value)
 
-const filteredAlerts = computed(() => {
-  let result = alerts.value
-  if (activeType.value !== 'all') {
-    result = result.filter(a => a.type === activeType.value)
-  }
-  if (showUnreadOnly.value) {
-    result = result.filter(a => !a.read)
-  }
-  return result
-})
+const totalPages = computed(() => Math.max(1, Math.ceil(total.value / pageSize)))
 
-const totalPages = computed(() => Math.max(1, Math.ceil(filteredAlerts.value.length / pageSize)))
-
-const paginatedAlerts = computed(() => {
-  const start = (currentPage.value - 1) * pageSize
-  return filteredAlerts.value.slice(start, start + pageSize)
-})
+const paginatedAlerts = computed(() => alerts.value)
 
 function toggleExpand(alert) {
   expandedId.value = expandedId.value === alert.id ? null : alert.id
   if (!alert.read) {
-    alert.read = true
+    markRead(alert)
   }
 }
 
-function markRead(alert) {
-  alert.read = true
+async function markRead(alert) {
+  try {
+    await alertAPI.markAsRead(alert.id)
+    alert.read = true
+    unreadCount.value = Math.max(0, unreadCount.value - 1)
+  } catch (e) {
+    ElMessage.error('标记已读失败')
+  }
 }
 
-function markAllRead() {
-  alerts.value.forEach(a => { a.read = true })
+async function markAllRead() {
+  try {
+    await alertAPI.markAllAsRead()
+    alerts.value.forEach(a => { a.read = true })
+    unreadCount.value = 0
+    ElMessage.success('已全部标记为已读')
+  } catch (e) {
+    ElMessage.error('操作失败')
+  }
 }
 
 function goToTask(alert) {
@@ -198,24 +201,70 @@ function goToTask(alert) {
   }
 }
 
+function mapAlertFromApi(item) {
+  return {
+    id: item.id,
+    type: item.type,
+    message: item.message,
+    taskName: item.task_name || '',
+    taskId: item.task_id,
+    time: item.created_at || '',
+    read: item.is_read === 1 || item.is_read === true,
+    detail: item.detail || '',
+    suggestion: item.suggestion || ''
+  }
+}
+
 async function fetchAlerts() {
   loading.value = true
-  await new Promise(r => setTimeout(r, 500))
-  alerts.value = [
-    { id: 1, type: 'task_failed', message: '任务「竞品价格追踪」执行失败：目标站点返回 503', taskName: '竞品价格追踪', taskId: 5, time: '10分钟前', read: false, detail: '任务在执行到第3页时，目标站点返回HTTP 503 Service Unavailable错误。可能是服务器负载过高或临时维护。连续重试3次均失败。', suggestion: '等待5分钟后手动重启任务；检查目标站点是否可正常访问；考虑增加请求间隔降低访问频率。' },
-    { id: 2, type: 'timeout', message: '任务「电商商品数据采集」请求超时：响应超过30秒', taskName: '电商商品数据采集', taskId: 1, time: '28分钟前', read: false, detail: '在采集商品详情页时，第47条数据的请求超过了预设的30秒超时限制。返回的数据不完整，该条记录已被标记为可疑。', suggestion: '检查目标站点响应速度；适当增加超时阈值到60秒；考虑更换代理服务器。' },
-    { id: 3, type: 'data_error', message: '任务「金融数据采集」数据解析异常：JSON格式错误', taskName: '金融数据采集', taskId: 9, time: '1小时前', read: false, detail: '目标站点返回的数据结构与预设的JSON Schema不匹配。某些字段缺失或类型错误，导致数据无法正确入库。', suggestion: '检查目标站点是否更改了API返回格式；更新数据解析规则；将异常数据写入死信队列以便后续分析。' },
-    { id: 4, type: 'ip_blocked', message: '代理IP池耗尽警告：当前可用IP少于5个', taskName: '系统监控', taskId: null, time: '1小时前', read: true, detail: '系统代理池中可用IP地址数量已降至5个以下。多个任务因缺少可用代理而暂停执行。当前活跃任务包括：社交媒体评论采集、地图POI数据。', suggestion: '立即前往代理管理页面添加新的代理IP；检查现有代理IP是否被目标站点封锁；启用自动代理轮换策略。' },
-    { id: 5, type: 'task_failed', message: '任务「视频元数据采集」部分失败：128条数据未能解析', taskName: '视频元数据采集', taskId: 10, time: '2小时前', read: true, detail: '在采集过程中，有128条视频的元数据解析失败。原因可能是视频已下架或页面结构变更。其余数据正常入库。', suggestion: '检查解析失败的URL列表；更新页面解析规则以适配新的页面结构；考虑添加数据完整性校验。' },
-    { id: 6, type: 'timeout', message: '任务「地图POI数据」请求延迟警告：平均响应4.8秒', taskName: '地图POI数据', taskId: 12, time: '3小时前', read: true, detail: '地图服务接口响应时间持续增加，已超过预设的3秒告警阈值。当前平均响应时间为4.8秒，可能影响整体采集效率。', suggestion: '检查网络连接质量；考虑切换到备用代理线路；适当降低并发数以缓解延迟问题。' },
-    { id: 7, type: 'data_error', message: '任务「新闻资讯爬取」数据去重失败：数据库连接超时', taskName: '新闻资讯爬取', taskId: 2, time: '4小时前', read: true, detail: '在写入采集数据到数据库时，MongoDB连接超时。数据暂时缓存在内存中，可能导致数据丢失风险。', suggestion: '检查数据库服务器运行状态；检查网络连接；考虑启用数据持久化缓存机制。' },
-    { id: 8, type: 'ip_blocked', message: '代理IP 192.168.1.50 已被目标站点封锁', taskName: '电商商品数据采集', taskId: 1, time: '5小时前', read: true, detail: '代理服务器IP地址 192.168.1.50 被目标站点检测到异常访问并列入黑名单。系统已自动从代理池中移除该IP。', suggestion: '检查IP访问频率是否过高；启用随机User-Agent轮换；增加请求间隔降低检测风险。' }
-  ]
-  loading.value = false
+  try {
+    const params = {
+      page: currentPage.value,
+      page_size: pageSize
+    }
+    if (activeType.value !== 'all') {
+      params.type = activeType.value
+    }
+    if (showUnreadOnly.value) {
+      params.is_read = 0
+    }
+    const res = await alertAPI.getAlerts(params)
+    if (res.data.success) {
+      alerts.value = (res.data.data.list || []).map(mapAlertFromApi)
+      total.value = res.data.data.total || 0
+    } else {
+      ElMessage.error(res.data.message || '获取告警列表失败')
+    }
+  } catch (e) {
+    ElMessage.error('获取告警列表失败')
+  } finally {
+    loading.value = false
+  }
 }
+
+async function fetchUnreadCount() {
+  try {
+    const res = await alertAPI.getUnreadCount()
+    if (res.data.success) {
+      unreadCount.value = res.data.data.count || 0
+    }
+  } catch (e) {
+    // silent
+  }
+}
+
+watch([activeType, showUnreadOnly], () => {
+  currentPage.value = 1
+  fetchAlerts()
+})
+
+watch(currentPage, () => {
+  fetchAlerts()
+})
 
 onMounted(() => {
   fetchAlerts()
+  fetchUnreadCount()
 })
 </script>
 
