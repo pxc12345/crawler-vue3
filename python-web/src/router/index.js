@@ -39,6 +39,90 @@ const routes = [
     name: 'Crawler',
     component: () => import('../views/Crawler.vue'),
     meta: { requiresAuth: true }
+  },
+  {
+    path: '/tasks',
+    name: 'Tasks',
+    component: () => import('../views/Tasks.vue'),
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/tasks/:id',
+    name: 'TaskDetail',
+    component: () => import('../views/TaskDetail.vue'),
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/tasks/:id/versions',
+    name: 'TaskVersions',
+    component: () => import('../views/TaskVersions.vue'),
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/task-templates',
+    name: 'TaskTemplates',
+    component: () => import('../views/TaskTemplates.vue'),
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/alerts',
+    name: 'Alerts',
+    component: () => import('../views/Alerts.vue'),
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/data-preview',
+    name: 'DataPreview',
+    component: () => import('../views/DataPreview.vue'),
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/data-clean',
+    name: 'DataClean',
+    component: () => import('../views/DataClean.vue'),
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/data-export',
+    name: 'DataExport',
+    component: () => import('../views/DataExport.vue'),
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/proxy-pool',
+    name: 'ProxyPool',
+    component: () => import('../views/ProxyPool.vue'),
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/anti-crawl',
+    name: 'AntiCrawl',
+    component: () => import('../views/AntiCrawl.vue'),
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/system-monitor',
+    name: 'SystemMonitor',
+    component: () => import('../views/SystemMonitor.vue'),
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/system-logs',
+    name: 'SystemLogs',
+    component: () => import('../views/SystemLogs.vue'),
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/workspace',
+    name: 'Workspace',
+    component: () => import('../views/Workspace.vue'),
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/settings',
+    name: 'Settings',
+    component: () => import('../views/Settings.vue'),
+    meta: { requiresAuth: true }
   }
 ]
 

@@ -5,9 +5,15 @@ from src.notification_db import notification_db
 from src.notifications.verification_service import verification_service
 from crawler_engine import crawler_engine
 from crawler_db import crawler_db
+from task_db import task_db
+from alert_db import alert_db
+from proxy_db import proxy_db
+from system_db import system_db
 import re
 import csv
 import io
+import json
+import psutil
 
 app = Flask(__name__)
 CORS(app, resources={
@@ -22,6 +28,10 @@ CORS(app, resources={
 })
 
 crawler_db.connect()
+task_db.connect()
+alert_db.connect()
+proxy_db.connect()
+system_db.connect()
 
 
 def is_valid_email(email):
@@ -458,6 +468,1250 @@ def crawler_data_export():
 @app.route('/api/health', methods=['GET'])
 def health_check():
     return jsonify({'success': True, 'message': 'Server is running'}), 200
+
+
+# ==================== Task Management Routes ====================
+
+@app.route('/api/tasks', methods=['GET'])
+@auth_service.login_required
+def task_list():
+    try:
+        status = request.args.get('status', '', type=str)
+        keyword = request.args.get('keyword', '', type=str)
+        page = request.args.get('page', 1, type=int)
+        page_size = request.args.get('page_size', 20, type=int)
+
+        if page < 1:
+            page = 1
+        if page_size < 1 or page_size > 100:
+            page_size = 20
+
+        tasks, total = task_db.get_list(
+            user_id=request.user_id,
+            status=status,
+            keyword=keyword,
+            page=page,
+            page_size=page_size
+        )
+
+        return jsonify({
+            'success': True,
+            'data': {
+                'list': tasks,
+                'total': total,
+                'page': page,
+                'page_size': page_size
+            }
+        }), 200
+
+    except Exception as e:
+        return jsonify({
+            'success': False, 'message': '获取任务列表失败', 'code': 'TASK_LIST_FAILED', 'error': str(e)
+        }), 500
+
+
+@app.route('/api/tasks', methods=['POST'])
+@auth_service.login_required
+def task_create():
+    try:
+        data = request.get_json()
+        name = (data.get('name') or '').strip()
+        task_type = (data.get('task_type') or '').strip()
+        config = data.get('config', {})
+        description = (data.get('description') or '').strip()
+        template_id = data.get('template_id')
+
+        if not name:
+            return jsonify({
+                'success': False, 'message': '请输入任务名称', 'code': 'MISSING_NAME'
+            }), 400
+
+        if not task_type:
+            return jsonify({
+                'success': False, 'message': '请选择任务类型', 'code': 'MISSING_TYPE'
+            }), 400
+
+        task_id = task_db.create(
+            user_id=request.user_id,
+            name=name,
+            task_type=task_type,
+            config=config,
+            description=description,
+            template_id=template_id
+        )
+
+        return jsonify({
+            'success': True, 'message': '创建任务成功', 'data': {'task_id': task_id}
+        }), 201
+
+    except Exception as e:
+        return jsonify({
+            'success': False, 'message': '创建任务失败', 'code': 'TASK_CREATE_FAILED', 'error': str(e)
+        }), 500
+
+
+@app.route('/api/tasks/<task_id>', methods=['GET'])
+@auth_service.login_required
+def task_detail(task_id):
+    try:
+        task = task_db.get_by_id(task_id, user_id=request.user_id)
+
+        if not task:
+            return jsonify({
+                'success': False, 'message': '任务不存在', 'code': 'TASK_NOT_FOUND'
+            }), 404
+
+        return jsonify({'success': True, 'data': task}), 200
+
+    except Exception as e:
+        return jsonify({
+            'success': False, 'message': '获取任务详情失败', 'code': 'TASK_DETAIL_FAILED', 'error': str(e)
+        }), 500
+
+
+@app.route('/api/tasks/<task_id>', methods=['PUT'])
+@auth_service.login_required
+def task_update(task_id):
+    try:
+        task = task_db.get_by_id(task_id, user_id=request.user_id)
+        if not task:
+            return jsonify({
+                'success': False, 'message': '任务不存在', 'code': 'TASK_NOT_FOUND'
+            }), 404
+
+        data = request.get_json()
+        name = data.get('name')
+        task_type = data.get('task_type')
+        config = data.get('config')
+        description = data.get('description')
+
+        task_db.update(
+            task_id=task_id,
+            name=name,
+            task_type=task_type,
+            config=config,
+            description=description,
+            user_id=request.user_id
+        )
+
+        return jsonify({'success': True, 'message': '更新任务成功'}), 200
+
+    except Exception as e:
+        return jsonify({
+            'success': False, 'message': '更新任务失败', 'code': 'TASK_UPDATE_FAILED', 'error': str(e)
+        }), 500
+
+
+@app.route('/api/tasks/<task_id>', methods=['DELETE'])
+@auth_service.login_required
+def task_delete(task_id):
+    try:
+        task = task_db.get_by_id(task_id, user_id=request.user_id)
+        if not task:
+            return jsonify({
+                'success': False, 'message': '任务不存在', 'code': 'TASK_NOT_FOUND'
+            }), 404
+
+        task_db.delete(task_id, user_id=request.user_id)
+
+        return jsonify({'success': True, 'message': '删除任务成功'}), 200
+
+    except Exception as e:
+        return jsonify({
+            'success': False, 'message': '删除任务失败', 'code': 'TASK_DELETE_FAILED', 'error': str(e)
+        }), 500
+
+
+@app.route('/api/tasks/<task_id>/start', methods=['POST'])
+@auth_service.login_required
+def task_start(task_id):
+    try:
+        task = task_db.get_by_id(task_id, user_id=request.user_id)
+        if not task:
+            return jsonify({
+                'success': False, 'message': '任务不存在', 'code': 'TASK_NOT_FOUND'
+            }), 404
+
+        success, message = task_db.start_task(task_id, user_id=request.user_id)
+
+        return jsonify({'success': success, 'message': message}), 200 if success else 400
+
+    except Exception as e:
+        return jsonify({
+            'success': False, 'message': '启动任务失败', 'code': 'TASK_START_FAILED', 'error': str(e)
+        }), 500
+
+
+@app.route('/api/tasks/<task_id>/stop', methods=['POST'])
+@auth_service.login_required
+def task_stop(task_id):
+    try:
+        task = task_db.get_by_id(task_id, user_id=request.user_id)
+        if not task:
+            return jsonify({
+                'success': False, 'message': '任务不存在', 'code': 'TASK_NOT_FOUND'
+            }), 404
+
+        success, message = task_db.stop_task(task_id, user_id=request.user_id)
+
+        return jsonify({'success': success, 'message': message}), 200 if success else 400
+
+    except Exception as e:
+        return jsonify({
+            'success': False, 'message': '停止任务失败', 'code': 'TASK_STOP_FAILED', 'error': str(e)
+        }), 500
+
+
+@app.route('/api/tasks/templates', methods=['GET'])
+@auth_service.login_required
+def task_template_list():
+    try:
+        templates = task_db.get_templates(user_id=request.user_id)
+
+        return jsonify({'success': True, 'data': templates}), 200
+
+    except Exception as e:
+        return jsonify({
+            'success': False, 'message': '获取模板列表失败', 'code': 'TEMPLATE_LIST_FAILED', 'error': str(e)
+        }), 500
+
+
+@app.route('/api/tasks/templates', methods=['POST'])
+@auth_service.login_required
+def task_template_create():
+    try:
+        data = request.get_json()
+        name = (data.get('name') or '').strip()
+        task_type = (data.get('task_type') or '').strip()
+        config = data.get('config', {})
+        description = (data.get('description') or '').strip()
+
+        if not name:
+            return jsonify({
+                'success': False, 'message': '请输入模板名称', 'code': 'MISSING_NAME'
+            }), 400
+
+        template_id = task_db.create_template(
+            user_id=request.user_id,
+            name=name,
+            task_type=task_type,
+            config=config,
+            description=description
+        )
+
+        return jsonify({
+            'success': True, 'message': '创建模板成功', 'data': {'template_id': template_id}
+        }), 201
+
+    except Exception as e:
+        return jsonify({
+            'success': False, 'message': '创建模板失败', 'code': 'TEMPLATE_CREATE_FAILED', 'error': str(e)
+        }), 500
+
+
+@app.route('/api/tasks/templates/<template_id>', methods=['GET'])
+@auth_service.login_required
+def task_template_detail(template_id):
+    try:
+        template = task_db.get_template_by_id(template_id, user_id=request.user_id)
+
+        if not template:
+            return jsonify({
+                'success': False, 'message': '模板不存在', 'code': 'TEMPLATE_NOT_FOUND'
+            }), 404
+
+        return jsonify({'success': True, 'data': template}), 200
+
+    except Exception as e:
+        return jsonify({
+            'success': False, 'message': '获取模板详情失败', 'code': 'TEMPLATE_DETAIL_FAILED', 'error': str(e)
+        }), 500
+
+
+@app.route('/api/tasks/templates/<template_id>', methods=['DELETE'])
+@auth_service.login_required
+def task_template_delete(template_id):
+    try:
+        template = task_db.get_template_by_id(template_id, user_id=request.user_id)
+        if not template:
+            return jsonify({
+                'success': False, 'message': '模板不存在', 'code': 'TEMPLATE_NOT_FOUND'
+            }), 404
+
+        task_db.delete_template(template_id, user_id=request.user_id)
+
+        return jsonify({'success': True, 'message': '删除模板成功'}), 200
+
+    except Exception as e:
+        return jsonify({
+            'success': False, 'message': '删除模板失败', 'code': 'TEMPLATE_DELETE_FAILED', 'error': str(e)
+        }), 500
+
+
+@app.route('/api/tasks/<task_id>/versions', methods=['GET'])
+@auth_service.login_required
+def task_versions(task_id):
+    try:
+        task = task_db.get_by_id(task_id, user_id=request.user_id)
+        if not task:
+            return jsonify({
+                'success': False, 'message': '任务不存在', 'code': 'TASK_NOT_FOUND'
+            }), 404
+
+        versions = task_db.get_versions(task_id, user_id=request.user_id)
+
+        return jsonify({'success': True, 'data': versions}), 200
+
+    except Exception as e:
+        return jsonify({
+            'success': False, 'message': '获取版本列表失败', 'code': 'VERSION_LIST_FAILED', 'error': str(e)
+        }), 500
+
+
+@app.route('/api/tasks/<task_id>/versions/rollback', methods=['POST'])
+@auth_service.login_required
+def task_rollback(task_id):
+    try:
+        data = request.get_json()
+        version_id = data.get('version_id')
+
+        if not version_id:
+            return jsonify({
+                'success': False, 'message': '请指定要回滚的版本', 'code': 'MISSING_VERSION'
+            }), 400
+
+        task = task_db.get_by_id(task_id, user_id=request.user_id)
+        if not task:
+            return jsonify({
+                'success': False, 'message': '任务不存在', 'code': 'TASK_NOT_FOUND'
+            }), 404
+
+        success, message = task_db.rollback_version(task_id, version_id, user_id=request.user_id)
+
+        return jsonify({'success': success, 'message': message}), 200 if success else 400
+
+    except Exception as e:
+        return jsonify({
+            'success': False, 'message': '版本回滚失败', 'code': 'ROLLBACK_FAILED', 'error': str(e)
+        }), 500
+
+
+@app.route('/api/tasks/favorites', methods=['GET'])
+@auth_service.login_required
+def task_favorites():
+    try:
+        favorites = task_db.get_favorites(user_id=request.user_id)
+
+        return jsonify({'success': True, 'data': favorites}), 200
+
+    except Exception as e:
+        return jsonify({
+            'success': False, 'message': '获取收藏列表失败', 'code': 'FAVORITES_FAILED', 'error': str(e)
+        }), 500
+
+
+@app.route('/api/tasks/<task_id>/favorite', methods=['POST'])
+@auth_service.login_required
+def task_add_favorite(task_id):
+    try:
+        task = task_db.get_by_id(task_id, user_id=request.user_id)
+        if not task:
+            return jsonify({
+                'success': False, 'message': '任务不存在', 'code': 'TASK_NOT_FOUND'
+            }), 404
+
+        task_db.add_favorite(task_id, user_id=request.user_id)
+
+        return jsonify({'success': True, 'message': '已加入收藏'}), 200
+
+    except Exception as e:
+        return jsonify({
+            'success': False, 'message': '收藏失败', 'code': 'FAVORITE_ADD_FAILED', 'error': str(e)
+        }), 500
+
+
+@app.route('/api/tasks/<task_id>/favorite', methods=['DELETE'])
+@auth_service.login_required
+def task_remove_favorite(task_id):
+    try:
+        task = task_db.get_by_id(task_id, user_id=request.user_id)
+        if not task:
+            return jsonify({
+                'success': False, 'message': '任务不存在', 'code': 'TASK_NOT_FOUND'
+            }), 404
+
+        task_db.remove_favorite(task_id, user_id=request.user_id)
+
+        return jsonify({'success': True, 'message': '已取消收藏'}), 200
+
+    except Exception as e:
+        return jsonify({
+            'success': False, 'message': '取消收藏失败', 'code': 'FAVORITE_REMOVE_FAILED', 'error': str(e)
+        }), 500
+
+
+# ==================== Alert Routes ====================
+
+@app.route('/api/alerts/rules', methods=['GET'])
+@auth_service.login_required
+def alert_rule_list():
+    try:
+        rules = alert_db.get_rules(user_id=request.user_id)
+
+        return jsonify({'success': True, 'data': rules}), 200
+
+    except Exception as e:
+        return jsonify({
+            'success': False, 'message': '获取告警规则失败', 'code': 'ALERT_RULE_LIST_FAILED', 'error': str(e)
+        }), 500
+
+
+@app.route('/api/alerts/rules', methods=['POST'])
+@auth_service.login_required
+def alert_rule_create():
+    try:
+        data = request.get_json()
+        name = (data.get('name') or '').strip()
+        rule_type = (data.get('rule_type') or '').strip()
+        condition = data.get('condition', {})
+        actions = data.get('actions', [])
+        is_enabled = data.get('is_enabled', True)
+
+        if not name:
+            return jsonify({
+                'success': False, 'message': '请输入规则名称', 'code': 'MISSING_NAME'
+            }), 400
+
+        rule_id = alert_db.create_rule(
+            user_id=request.user_id,
+            name=name,
+            rule_type=rule_type,
+            condition=condition,
+            actions=actions,
+            is_enabled=is_enabled
+        )
+
+        return jsonify({
+            'success': True, 'message': '创建告警规则成功', 'data': {'rule_id': rule_id}
+        }), 201
+
+    except Exception as e:
+        return jsonify({
+            'success': False, 'message': '创建告警规则失败', 'code': 'ALERT_RULE_CREATE_FAILED', 'error': str(e)
+        }), 500
+
+
+@app.route('/api/alerts/rules/<rule_id>', methods=['PUT'])
+@auth_service.login_required
+def alert_rule_update(rule_id):
+    try:
+        rule = alert_db.get_rule_by_id(rule_id, user_id=request.user_id)
+        if not rule:
+            return jsonify({
+                'success': False, 'message': '规则不存在', 'code': 'RULE_NOT_FOUND'
+            }), 404
+
+        data = request.get_json()
+        name = data.get('name')
+        rule_type = data.get('rule_type')
+        condition = data.get('condition')
+        actions = data.get('actions')
+        is_enabled = data.get('is_enabled')
+
+        alert_db.update_rule(
+            rule_id=rule_id,
+            name=name,
+            rule_type=rule_type,
+            condition=condition,
+            actions=actions,
+            is_enabled=is_enabled,
+            user_id=request.user_id
+        )
+
+        return jsonify({'success': True, 'message': '更新告警规则成功'}), 200
+
+    except Exception as e:
+        return jsonify({
+            'success': False, 'message': '更新告警规则失败', 'code': 'ALERT_RULE_UPDATE_FAILED', 'error': str(e)
+        }), 500
+
+
+@app.route('/api/alerts/rules/<rule_id>', methods=['DELETE'])
+@auth_service.login_required
+def alert_rule_delete(rule_id):
+    try:
+        rule = alert_db.get_rule_by_id(rule_id, user_id=request.user_id)
+        if not rule:
+            return jsonify({
+                'success': False, 'message': '规则不存在', 'code': 'RULE_NOT_FOUND'
+            }), 404
+
+        alert_db.delete_rule(rule_id, user_id=request.user_id)
+
+        return jsonify({'success': True, 'message': '删除告警规则成功'}), 200
+
+    except Exception as e:
+        return jsonify({
+            'success': False, 'message': '删除告警规则失败', 'code': 'ALERT_RULE_DELETE_FAILED', 'error': str(e)
+        }), 500
+
+
+@app.route('/api/alerts', methods=['GET'])
+@auth_service.login_required
+def alert_list():
+    try:
+        alert_type = request.args.get('type', '', type=str)
+        is_read = request.args.get('is_read', None, type=str)
+        page = request.args.get('page', 1, type=int)
+        page_size = request.args.get('page_size', 20, type=int)
+
+        if page < 1:
+            page = 1
+        if page_size < 1 or page_size > 100:
+            page_size = 20
+
+        if is_read is not None:
+            is_read = is_read.lower() == 'true'
+
+        alerts, total = alert_db.get_list(
+            user_id=request.user_id,
+            alert_type=alert_type,
+            is_read=is_read,
+            page=page,
+            page_size=page_size
+        )
+
+        return jsonify({
+            'success': True,
+            'data': {
+                'list': alerts,
+                'total': total,
+                'page': page,
+                'page_size': page_size
+            }
+        }), 200
+
+    except Exception as e:
+        return jsonify({
+            'success': False, 'message': '获取告警列表失败', 'code': 'ALERT_LIST_FAILED', 'error': str(e)
+        }), 500
+
+
+@app.route('/api/alerts/<alert_id>/read', methods=['PUT'])
+@auth_service.login_required
+def alert_mark_read(alert_id):
+    try:
+        alert_db.mark_as_read(alert_id, user_id=request.user_id)
+
+        return jsonify({'success': True, 'message': '已标记为已读'}), 200
+
+    except Exception as e:
+        return jsonify({
+            'success': False, 'message': '标记已读失败', 'code': 'ALERT_MARK_READ_FAILED', 'error': str(e)
+        }), 500
+
+
+@app.route('/api/alerts/read-all', methods=['PUT'])
+@auth_service.login_required
+def alert_mark_all_read():
+    try:
+        alert_db.mark_all_as_read(user_id=request.user_id)
+
+        return jsonify({'success': True, 'message': '已全部标记为已读'}), 200
+
+    except Exception as e:
+        return jsonify({
+            'success': False, 'message': '全部标记已读失败', 'code': 'ALERT_MARK_ALL_FAILED', 'error': str(e)
+        }), 500
+
+
+@app.route('/api/alerts/unread-count', methods=['GET'])
+@auth_service.login_required
+def alert_unread_count():
+    try:
+        count = alert_db.get_unread_count(user_id=request.user_id)
+
+        return jsonify({'success': True, 'data': {'count': count}}), 200
+
+    except Exception as e:
+        return jsonify({
+            'success': False, 'message': '获取未读数量失败', 'code': 'UNREAD_COUNT_FAILED', 'error': str(e)
+        }), 500
+
+
+# ==================== Data Management Routes ====================
+
+@app.route('/api/data/preview', methods=['GET'])
+@auth_service.login_required
+def data_preview():
+    try:
+        page = request.args.get('page', 1, type=int)
+        page_size = request.args.get('page_size', 20, type=int)
+        keyword = request.args.get('keyword', '', type=str)
+
+        if page < 1:
+            page = 1
+        if page_size < 1 or page_size > 100:
+            page_size = 20
+
+        rows, total = crawler_db.get_list(page=page, page_size=page_size, keyword=keyword)
+
+        return jsonify({
+            'success': True,
+            'data': {
+                'list': rows,
+                'total': total,
+                'page': page,
+                'page_size': page_size
+            }
+        }), 200
+
+    except Exception as e:
+        return jsonify({
+            'success': False, 'message': '获取数据预览失败', 'code': 'DATA_PREVIEW_FAILED', 'error': str(e)
+        }), 500
+
+
+@app.route('/api/data/clean', methods=['POST'])
+@auth_service.login_required
+def data_clean():
+    try:
+        data = request.get_json()
+        items = data.get('data', [])
+        operations = data.get('operations', [])
+
+        if not items or not isinstance(items, list):
+            return jsonify({
+                'success': False, 'message': '请提供有效的数据', 'code': 'INVALID_DATA'
+            }), 400
+
+        cleaned = list(items)
+
+        for op in operations:
+            if op == 'deduplicate':
+                seen = set()
+                unique = []
+                for item in cleaned:
+                    item_key = json.dumps(item, sort_keys=True, ensure_ascii=False)
+                    if item_key not in seen:
+                        seen.add(item_key)
+                        unique.append(item)
+                cleaned = unique
+            elif op == 'filter_empty':
+                cleaned = [
+                    item for item in cleaned
+                    if item and any(v for v in item.values() if v)
+                ]
+            elif op == 'format_fields':
+                cleaned = [
+                    {k: (v.strip() if isinstance(v, str) else v) for k, v in item.items()}
+                    if isinstance(item, dict) else item
+                    for item in cleaned
+                ]
+
+        return jsonify({
+            'success': True,
+            'message': '数据清洗完成',
+            'data': {
+                'original_count': len(items),
+                'cleaned_count': len(cleaned),
+                'items': cleaned
+            }
+        }), 200
+
+    except Exception as e:
+        return jsonify({
+            'success': False, 'message': '数据清洗失败', 'code': 'DATA_CLEAN_FAILED', 'error': str(e)
+        }), 500
+
+
+@app.route('/api/data/export', methods=['GET'])
+@auth_service.login_required
+def data_export():
+    try:
+        export_format = request.args.get('format', 'csv', type=str).lower()
+        fields_str = request.args.get('fields', '', type=str)
+
+        items = crawler_db.get_all()
+
+        if not items:
+            return jsonify({
+                'success': False, 'message': '暂无数据可导出', 'code': 'NO_DATA'
+            }), 400
+
+        fields = [f.strip() for f in fields_str.split(',') if f.strip()] if fields_str else (
+            ['id', 'title', 'link', 'content', 'source_url', 'page_number', 'collected_at']
+        )
+
+        if export_format == 'csv':
+            output = io.StringIO()
+            writer = csv.writer(output)
+            writer.writerow(fields)
+            for item in items:
+                writer.writerow([item.get(f, '') for f in fields])
+            output.seek(0)
+
+            return Response(
+                output.getvalue().encode('utf-8-sig'),
+                mimetype='text/csv',
+                headers={
+                    'Content-Disposition': 'attachment; filename=data_export.csv',
+                    'Content-Type': 'text/csv; charset=utf-8-sig'
+                }
+            )
+
+        elif export_format == 'json':
+            result = [{f: item.get(f, '') for f in fields} for item in items]
+            output = json.dumps(result, ensure_ascii=False, indent=2)
+
+            return Response(
+                output.encode('utf-8'),
+                mimetype='application/json',
+                headers={
+                    'Content-Disposition': 'attachment; filename=data_export.json',
+                    'Content-Type': 'application/json; charset=utf-8'
+                }
+            )
+
+        elif export_format == 'excel':
+            return jsonify({
+                'success': False, 'message': 'Excel导出需要安装openpyxl库', 'code': 'EXCEL_NOT_SUPPORTED'
+            }), 400
+
+        else:
+            return jsonify({
+                'success': False, 'message': f'不支持的导出格式: {export_format}', 'code': 'INVALID_FORMAT'
+            }), 400
+
+    except Exception as e:
+        return jsonify({
+            'success': False, 'message': '导出数据失败', 'code': 'DATA_EXPORT_FAILED', 'error': str(e)
+        }), 500
+
+
+@app.route('/api/data/auto-write-config', methods=['POST'])
+@auth_service.login_required
+def data_auto_write_config():
+    try:
+        data = request.get_json()
+        target_type = data.get('target_type')
+        target_config = data.get('target_config', {})
+
+        if not target_type:
+            return jsonify({
+                'success': False, 'message': '请选择写入目标类型', 'code': 'MISSING_TARGET_TYPE'
+            }), 400
+
+        crawler_db.save_auto_write_config(
+            user_id=request.user_id,
+            target_type=target_type,
+            target_config=target_config
+        )
+
+        return jsonify({'success': True, 'message': '自动写入配置保存成功'}), 200
+
+    except Exception as e:
+        return jsonify({
+            'success': False, 'message': '保存配置失败', 'code': 'AUTO_WRITE_CONFIG_FAILED', 'error': str(e)
+        }), 500
+
+
+@app.route('/api/data/push-config', methods=['POST'])
+@auth_service.login_required
+def data_push_config():
+    try:
+        data = request.get_json()
+        push_type = data.get('push_type')
+        push_config = data.get('push_config', {})
+
+        if not push_type:
+            return jsonify({
+                'success': False, 'message': '请选择推送类型', 'code': 'MISSING_PUSH_TYPE'
+            }), 400
+
+        crawler_db.save_push_config(
+            user_id=request.user_id,
+            push_type=push_type,
+            push_config=push_config
+        )
+
+        return jsonify({'success': True, 'message': '推送配置保存成功'}), 200
+
+    except Exception as e:
+        return jsonify({
+            'success': False, 'message': '保存推送配置失败', 'code': 'PUSH_CONFIG_FAILED', 'error': str(e)
+        }), 500
+
+
+# ==================== Proxy Routes ====================
+
+@app.route('/api/proxy/list', methods=['GET'])
+@auth_service.login_required
+def proxy_list():
+    try:
+        proxies = proxy_db.get_list(user_id=request.user_id)
+
+        return jsonify({'success': True, 'data': proxies}), 200
+
+    except Exception as e:
+        return jsonify({
+            'success': False, 'message': '获取代理列表失败', 'code': 'PROXY_LIST_FAILED', 'error': str(e)
+        }), 500
+
+
+@app.route('/api/proxy/add', methods=['POST'])
+@auth_service.login_required
+def proxy_add():
+    try:
+        data = request.get_json()
+        host = (data.get('host') or '').strip()
+        port = data.get('port')
+        protocol = (data.get('protocol') or 'http').strip()
+        username = (data.get('username') or '').strip()
+        password = (data.get('password') or '').strip()
+
+        if not host:
+            return jsonify({
+                'success': False, 'message': '请输入代理地址', 'code': 'MISSING_HOST'
+            }), 400
+
+        if not port:
+            return jsonify({
+                'success': False, 'message': '请输入代理端口', 'code': 'MISSING_PORT'
+            }), 400
+
+        proxy_id = proxy_db.add(
+            user_id=request.user_id,
+            host=host,
+            port=port,
+            protocol=protocol,
+            username=username,
+            password=password
+        )
+
+        return jsonify({
+            'success': True, 'message': '添加代理成功', 'data': {'proxy_id': proxy_id}
+        }), 201
+
+    except Exception as e:
+        return jsonify({
+            'success': False, 'message': '添加代理失败', 'code': 'PROXY_ADD_FAILED', 'error': str(e)
+        }), 500
+
+
+@app.route('/api/proxy/<proxy_id>', methods=['DELETE'])
+@auth_service.login_required
+def proxy_delete(proxy_id):
+    try:
+        proxy_db.delete(proxy_id, user_id=request.user_id)
+
+        return jsonify({'success': True, 'message': '删除代理成功'}), 200
+
+    except Exception as e:
+        return jsonify({
+            'success': False, 'message': '删除代理失败', 'code': 'PROXY_DELETE_FAILED', 'error': str(e)
+        }), 500
+
+
+@app.route('/api/proxy/<proxy_id>/refresh', methods=['POST'])
+@auth_service.login_required
+def proxy_refresh(proxy_id):
+    try:
+        success, message = proxy_db.refresh(proxy_id, user_id=request.user_id)
+
+        return jsonify({'success': success, 'message': message}), 200 if success else 400
+
+    except Exception as e:
+        return jsonify({
+            'success': False, 'message': '刷新代理失败', 'code': 'PROXY_REFRESH_FAILED', 'error': str(e)
+        }), 500
+
+
+@app.route('/api/proxy/groups', methods=['GET'])
+@auth_service.login_required
+def proxy_groups():
+    try:
+        groups = proxy_db.get_groups(user_id=request.user_id)
+
+        return jsonify({'success': True, 'data': groups}), 200
+
+    except Exception as e:
+        return jsonify({
+            'success': False, 'message': '获取代理组失败', 'code': 'PROXY_GROUP_LIST_FAILED', 'error': str(e)
+        }), 500
+
+
+@app.route('/api/proxy/groups', methods=['POST'])
+@auth_service.login_required
+def proxy_group_create():
+    try:
+        data = request.get_json()
+        name = (data.get('name') or '').strip()
+        description = (data.get('description') or '').strip()
+
+        if not name:
+            return jsonify({
+                'success': False, 'message': '请输入组名称', 'code': 'MISSING_NAME'
+            }), 400
+
+        group_id = proxy_db.create_group(
+            user_id=request.user_id,
+            name=name,
+            description=description
+        )
+
+        return jsonify({
+            'success': True, 'message': '创建代理组成功', 'data': {'group_id': group_id}
+        }), 201
+
+    except Exception as e:
+        return jsonify({
+            'success': False, 'message': '创建代理组失败', 'code': 'PROXY_GROUP_CREATE_FAILED', 'error': str(e)
+        }), 500
+
+
+@app.route('/api/proxy/groups/assign', methods=['POST'])
+@auth_service.login_required
+def proxy_group_assign():
+    try:
+        data = request.get_json()
+        proxy_id = data.get('proxy_id')
+        group_id = data.get('group_id')
+
+        if not proxy_id or not group_id:
+            return jsonify({
+                'success': False, 'message': '请提供代理ID和组ID', 'code': 'MISSING_PARAMS'
+            }), 400
+
+        proxy_db.assign_to_group(proxy_id, group_id, user_id=request.user_id)
+
+        return jsonify({'success': True, 'message': '代理分配成功'}), 200
+
+    except Exception as e:
+        return jsonify({
+            'success': False, 'message': '代理分配失败', 'code': 'PROXY_ASSIGN_FAILED', 'error': str(e)
+        }), 500
+
+
+@app.route('/api/proxy/blacklist', methods=['GET'])
+@auth_service.login_required
+def proxy_blacklist():
+    try:
+        items = proxy_db.get_blacklist(user_id=request.user_id)
+
+        return jsonify({'success': True, 'data': items}), 200
+
+    except Exception as e:
+        return jsonify({
+            'success': False, 'message': '获取黑名单失败', 'code': 'BLACKLIST_FAILED', 'error': str(e)
+        }), 500
+
+
+@app.route('/api/proxy/blacklist', methods=['POST'])
+@auth_service.login_required
+def proxy_blacklist_add():
+    try:
+        data = request.get_json()
+        target = (data.get('target') or '').strip()
+        reason = (data.get('reason') or '').strip()
+
+        if not target:
+            return jsonify({
+                'success': False, 'message': '请输入黑名单目标', 'code': 'MISSING_TARGET'
+            }), 400
+
+        item_id = proxy_db.add_blacklist(
+            user_id=request.user_id,
+            target=target,
+            reason=reason
+        )
+
+        return jsonify({
+            'success': True, 'message': '已加入黑名单', 'data': {'item_id': item_id}
+        }), 201
+
+    except Exception as e:
+        return jsonify({
+            'success': False, 'message': '加入黑名单失败', 'code': 'BLACKLIST_ADD_FAILED', 'error': str(e)
+        }), 500
+
+
+@app.route('/api/proxy/blacklist/<item_id>', methods=['DELETE'])
+@auth_service.login_required
+def proxy_blacklist_remove(item_id):
+    try:
+        proxy_db.remove_blacklist(item_id, user_id=request.user_id)
+
+        return jsonify({'success': True, 'message': '已从黑名单移除'}), 200
+
+    except Exception as e:
+        return jsonify({
+            'success': False, 'message': '移除黑名单失败', 'code': 'BLACKLIST_REMOVE_FAILED', 'error': str(e)
+        }), 500
+
+
+@app.route('/api/proxy/whitelist', methods=['GET'])
+@auth_service.login_required
+def proxy_whitelist():
+    try:
+        items = proxy_db.get_whitelist(user_id=request.user_id)
+
+        return jsonify({'success': True, 'data': items}), 200
+
+    except Exception as e:
+        return jsonify({
+            'success': False, 'message': '获取白名单失败', 'code': 'WHITELIST_FAILED', 'error': str(e)
+        }), 500
+
+
+@app.route('/api/proxy/whitelist', methods=['POST'])
+@auth_service.login_required
+def proxy_whitelist_add():
+    try:
+        data = request.get_json()
+        target = (data.get('target') or '').strip()
+        reason = (data.get('reason') or '').strip()
+
+        if not target:
+            return jsonify({
+                'success': False, 'message': '请输入白名单目标', 'code': 'MISSING_TARGET'
+            }), 400
+
+        item_id = proxy_db.add_whitelist(
+            user_id=request.user_id,
+            target=target,
+            reason=reason
+        )
+
+        return jsonify({
+            'success': True, 'message': '已加入白名单', 'data': {'item_id': item_id}
+        }), 201
+
+    except Exception as e:
+        return jsonify({
+            'success': False, 'message': '加入白名单失败', 'code': 'WHITELIST_ADD_FAILED', 'error': str(e)
+        }), 500
+
+
+@app.route('/api/proxy/whitelist/<item_id>', methods=['DELETE'])
+@auth_service.login_required
+def proxy_whitelist_remove(item_id):
+    try:
+        proxy_db.remove_whitelist(item_id, user_id=request.user_id)
+
+        return jsonify({'success': True, 'message': '已从白名单移除'}), 200
+
+    except Exception as e:
+        return jsonify({
+            'success': False, 'message': '移除白名单失败', 'code': 'WHITELIST_REMOVE_FAILED', 'error': str(e)
+        }), 500
+
+
+@app.route('/api/proxy/rate-limits', methods=['GET'])
+@auth_service.login_required
+def proxy_rate_limits():
+    try:
+        limits = proxy_db.get_rate_limits(user_id=request.user_id)
+
+        return jsonify({'success': True, 'data': limits}), 200
+
+    except Exception as e:
+        return jsonify({
+            'success': False, 'message': '获取速率限制失败', 'code': 'RATE_LIMIT_FAILED', 'error': str(e)
+        }), 500
+
+
+@app.route('/api/proxy/rate-limits', methods=['POST'])
+@auth_service.login_required
+def proxy_rate_limit_set():
+    try:
+        data = request.get_json()
+        max_requests = data.get('max_requests')
+        time_window = data.get('time_window')
+        target_id = data.get('target_id')
+
+        if not max_requests or not time_window:
+            return jsonify({
+                'success': False, 'message': '请设置最大请求数和时间窗口', 'code': 'MISSING_PARAMS'
+            }), 400
+
+        proxy_db.set_rate_limit(
+            user_id=request.user_id,
+            target_id=target_id,
+            max_requests=max_requests,
+            time_window=time_window
+        )
+
+        return jsonify({'success': True, 'message': '速率限制设置成功'}), 200
+
+    except Exception as e:
+        return jsonify({
+            'success': False, 'message': '设置速率限制失败', 'code': 'RATE_LIMIT_SET_FAILED', 'error': str(e)
+        }), 500
+
+
+# ==================== System Routes ====================
+
+@app.route('/api/system/resources', methods=['GET'])
+@auth_service.login_required
+def system_resources():
+    try:
+        cpu_percent = psutil.cpu_percent(interval=1)
+        memory = psutil.virtual_memory()
+        disk = psutil.disk_usage('/')
+
+        return jsonify({
+            'success': True,
+            'data': {
+                'cpu': {
+                    'percent': cpu_percent,
+                    'cores': psutil.cpu_count(logical=True),
+                    'physical_cores': psutil.cpu_count(logical=False)
+                },
+                'memory': {
+                    'total': memory.total,
+                    'available': memory.available,
+                    'percent': memory.percent,
+                    'used': memory.used,
+                    'free': memory.free
+                },
+                'disk': {
+                    'total': disk.total,
+                    'used': disk.used,
+                    'free': disk.free,
+                    'percent': disk.percent
+                }
+            }
+        }), 200
+
+    except Exception as e:
+        return jsonify({
+            'success': False, 'message': '获取系统资源失败', 'code': 'RESOURCES_FAILED', 'error': str(e)
+        }), 500
+
+
+@app.route('/api/system/logs', methods=['GET'])
+@auth_service.login_required
+def system_logs():
+    try:
+        level = request.args.get('level', '', type=str)
+        page = request.args.get('page', 1, type=int)
+        page_size = request.args.get('page_size', 20, type=int)
+
+        if page < 1:
+            page = 1
+        if page_size < 1 or page_size > 100:
+            page_size = 20
+
+        logs, total = system_db.get_logs(
+            user_id=request.user_id,
+            level=level,
+            page=page,
+            page_size=page_size
+        )
+
+        return jsonify({
+            'success': True,
+            'data': {
+                'list': logs,
+                'total': total,
+                'page': page,
+                'page_size': page_size
+            }
+        }), 200
+
+    except Exception as e:
+        return jsonify({
+            'success': False, 'message': '获取系统日志失败', 'code': 'LOGS_FAILED', 'error': str(e)
+        }), 500
+
+
+@app.route('/api/system/logs/clear', methods=['POST'])
+@auth_service.login_required
+def system_logs_clear():
+    try:
+        data = request.get_json()
+        days = data.get('days', 30)
+
+        if not isinstance(days, int) or days < 1:
+            return jsonify({
+                'success': False, 'message': '请提供有效的天数（大于0的整数）', 'code': 'INVALID_DAYS'
+            }), 400
+
+        system_db.clear_logs(days=days, user_id=request.user_id)
+
+        return jsonify({'success': True, 'message': f'已清理 {days} 天前的日志'}), 200
+
+    except Exception as e:
+        return jsonify({
+            'success': False, 'message': '清理日志失败', 'code': 'LOGS_CLEAR_FAILED', 'error': str(e)
+        }), 500
+
+
+@app.route('/api/system/settings', methods=['GET'])
+@auth_service.login_required
+def system_settings():
+    try:
+        settings = system_db.get_settings(user_id=request.user_id)
+
+        return jsonify({'success': True, 'data': settings}), 200
+
+    except Exception as e:
+        return jsonify({
+            'success': False, 'message': '获取系统设置失败', 'code': 'SETTINGS_FAILED', 'error': str(e)
+        }), 500
+
+
+@app.route('/api/system/settings/<key>', methods=['PUT'])
+@auth_service.login_required
+def system_setting_update(key):
+    try:
+        data = request.get_json()
+        value = data.get('value')
+
+        if value is None:
+            return jsonify({
+                'success': False, 'message': '请提供设置值', 'code': 'MISSING_VALUE'
+            }), 400
+
+        system_db.update_setting(key=key, value=value, user_id=request.user_id)
+
+        return jsonify({'success': True, 'message': '设置更新成功'}), 200
+
+    except Exception as e:
+        return jsonify({
+            'success': False, 'message': '更新设置失败', 'code': 'SETTING_UPDATE_FAILED', 'error': str(e)
+        }), 500
+
+
+@app.route('/api/system/user/preferences', methods=['GET'])
+@auth_service.login_required
+def user_preferences_get():
+    try:
+        preferences = system_db.get_user_preferences(user_id=request.user_id)
+
+        return jsonify({'success': True, 'data': preferences}), 200
+
+    except Exception as e:
+        return jsonify({
+            'success': False, 'message': '获取用户偏好失败', 'code': 'PREFERENCES_FAILED', 'error': str(e)
+        }), 500
+
+
+@app.route('/api/system/user/preferences', methods=['PUT'])
+@auth_service.login_required
+def user_preferences_save():
+    try:
+        data = request.get_json()
+
+        system_db.save_user_preferences(user_id=request.user_id, preferences=data)
+
+        return jsonify({'success': True, 'message': '偏好设置保存成功'}), 200
+
+    except Exception as e:
+        return jsonify({
+            'success': False, 'message': '保存偏好设置失败', 'code': 'PREFERENCES_SAVE_FAILED', 'error': str(e)
+        }), 500
 
 
 if __name__ == '__main__':

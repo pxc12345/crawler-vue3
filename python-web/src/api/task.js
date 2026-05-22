@@ -1,0 +1,67 @@
+import api from './index'
+
+export const taskAPI = {
+  getTasks(params) {
+    return api.get('/tasks', { params })
+  },
+
+  getTask(id) {
+    return api.get(`/tasks/${id}`)
+  },
+
+  createTask(data) {
+    return api.post('/tasks', data)
+  },
+
+  updateTask(id, data) {
+    return api.put(`/tasks/${id}`, data)
+  },
+
+  deleteTask(id) {
+    return api.delete(`/tasks/${id}`)
+  },
+
+  startTask(id) {
+    return api.post(`/tasks/${id}/start`)
+  },
+
+  stopTask(id) {
+    return api.post(`/tasks/${id}/stop`)
+  },
+
+  getTemplates() {
+    return api.get('/tasks/templates')
+  },
+
+  createTemplate(data) {
+    return api.post('/tasks/templates', data)
+  },
+
+  deleteTemplate(id) {
+    return api.delete(`/tasks/templates/${id}`)
+  },
+
+  getTemplateById(id) {
+    return api.get(`/tasks/templates/${id}`)
+  },
+
+  getVersions(taskId) {
+    return api.get(`/tasks/${taskId}/versions`)
+  },
+
+  rollbackVersion(taskId, versionIndex) {
+    return api.post(`/tasks/${taskId}/versions/${versionIndex}/rollback`)
+  },
+
+  getFavorites() {
+    return api.get('/tasks/favorites')
+  },
+
+  addFavorite(taskId) {
+    return api.post(`/tasks/${taskId}/favorite`)
+  },
+
+  removeFavorite(taskId) {
+    return api.delete(`/tasks/${taskId}/favorite`)
+  }
+}
