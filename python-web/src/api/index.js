@@ -88,6 +88,10 @@ export const authAPI = {
 export const userAPI = {
   getProfile() {
     return api.get('/user/profile')
+  },
+
+  updateProfile(data) {
+    return api.put('/user/profile', data)
   }
 }
 

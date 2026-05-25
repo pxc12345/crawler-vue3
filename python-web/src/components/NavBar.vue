@@ -2,7 +2,7 @@
   <nav class="nav">
     <div class="nav-container">
       <router-link to="/" class="nav-logo">
-        <span class="logo-dot"></span>
+        <img src="/logo.png" alt="CrawlMaster" class="logo-img" />
         <span class="logo-text">CrawlMaster</span>
       </router-link>
 
@@ -67,6 +67,11 @@
         <div class="nav-user">
           <div class="user-avatar">{{ authStore.user?.username?.charAt(0)?.toUpperCase() }}</div>
           <span class="user-name">{{ authStore.user?.username }}</span>
+          <router-link to="/settings" class="btn-settings">
+            <svg class="settings-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+            </svg>
+          </router-link>
           <button class="btn-logout" @click="handleLogout">
             <svg class="logout-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
@@ -125,12 +130,12 @@ async function handleLogout() {
   position: sticky;
   top: 0;
   z-index: 100;
-  background: rgba(13, 17, 23, 0.88);
+  background: var(--bg-primary);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
-  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.06), 0 4px 24px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 1px 0 var(--border-color), 0 4px 24px rgba(0, 0, 0, 0.3);
   padding: 0 24px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  border-bottom: 1px solid var(--border-color);
 }
 
 .nav-container {
@@ -145,25 +150,23 @@ async function handleLogout() {
 .nav-logo {
   font-size: 17px;
   font-weight: 700;
-  color: rgba(255, 255, 255, 0.9);
+  color: var(--text-primary);
   text-decoration: none;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   letter-spacing: -0.3px;
 }
 
-.logo-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: linear-gradient(135deg, #4c6ef5, #7c3aed);
-  display: inline-block;
-  box-shadow: 0 0 12px rgba(76, 110, 245, 0.5);
+.logo-img {
+  width: 32px;
+  height: 32px;
+  object-fit: contain;
+  border-radius: 6px;
 }
 
 .logo-text {
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.9), rgba(255, 255, 255, 0.7));
+  background: var(--logo-gradient);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -176,7 +179,7 @@ async function handleLogout() {
 }
 
 .nav-link {
-  color: rgba(255, 255, 255, 0.55);
+  color: var(--text-secondary);
   text-decoration: none;
   font-size: 13px;
   font-weight: 500;
@@ -189,13 +192,13 @@ async function handleLogout() {
 }
 
 .nav-link:hover {
-  color: rgba(255, 255, 255, 0.85);
+  color: var(--text-primary);
   background: rgba(255, 255, 255, 0.05);
 }
 
 .nav-link.active {
-  color: #7c8aff;
-  background: rgba(76, 110, 245, 0.12);
+  color: var(--active-color);
+  background: var(--active-bg);
   font-weight: 600;
 }
 
@@ -228,10 +231,10 @@ async function handleLogout() {
   left: 50%;
   transform: translateX(-50%) translateY(-8px);
   min-width: 160px;
-  background: rgba(22, 27, 34, 0.96);
+  background: var(--bg-card);
   backdrop-filter: blur(24px);
   -webkit-backdrop-filter: blur(24px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--border-color);
   border-radius: 12px;
   padding: 6px;
   box-shadow:
@@ -255,7 +258,7 @@ async function handleLogout() {
   display: block;
   padding: 10px 16px;
   font-size: 13px;
-  color: rgba(255, 255, 255, 0.55);
+  color: var(--text-secondary);
   text-decoration: none;
   border-radius: 8px;
   transition: all 0.2s ease;
@@ -264,13 +267,13 @@ async function handleLogout() {
 }
 
 .dropdown-item:hover {
-  color: rgba(255, 255, 255, 0.9);
-  background: rgba(76, 110, 245, 0.12);
+  color: var(--text-primary);
+  background: var(--active-bg);
 }
 
 .dropdown-item.router-link-active {
-  color: #7c8aff;
-  background: rgba(76, 110, 245, 0.1);
+  color: var(--active-color);
+  background: var(--active-bg);
 }
 
 .nav-user {
@@ -279,14 +282,14 @@ async function handleLogout() {
   gap: 10px;
   margin-left: 12px;
   padding-left: 16px;
-  border-left: 1px solid rgba(255, 255, 255, 0.08);
+  border-left: 1px solid var(--border-color);
 }
 
 .user-avatar {
   width: 34px;
   height: 34px;
   border-radius: 50%;
-  background: linear-gradient(135deg, #4c6ef5, #7c3aed);
+  background: var(--avatar-bg);
   color: #fff;
   display: flex;
   align-items: center;
@@ -294,12 +297,12 @@ async function handleLogout() {
   font-size: 14px;
   font-weight: 700;
   flex-shrink: 0;
-  box-shadow: 0 2px 12px rgba(76, 110, 245, 0.3);
+  box-shadow: 0 2px 12px rgba(var(--accent-rgb), 0.3);
 }
 
 .user-name {
   font-size: 13px;
-  color: rgba(255, 255, 255, 0.7);
+  color: var(--text-secondary);
   font-weight: 600;
   letter-spacing: -0.1px;
 }
@@ -324,6 +327,31 @@ async function handleLogout() {
   color: #fff;
   border-color: #ef4444;
   box-shadow: 0 2px 12px rgba(239, 68, 68, 0.3);
+}
+
+.btn-settings {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 7px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  cursor: pointer;
+  color: var(--text-muted);
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  text-decoration: none;
+}
+
+.btn-settings:hover {
+  background: var(--active-bg);
+  border-color: rgba(76, 110, 245, 0.2);
+  color: var(--active-color, #7c8aff);
+}
+
+.settings-icon {
+  width: 16px;
+  height: 16px;
 }
 
 .btn-logout:active {

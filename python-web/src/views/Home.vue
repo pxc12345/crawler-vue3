@@ -400,7 +400,7 @@ onMounted(() => {
 <style scoped>
 .home-page {
   min-height: 100vh;
-  background-color: #0d1117;
+  background-color: var(--bg-primary);
   background-image:
     linear-gradient(rgba(255, 255, 255, 0.018) 1px, transparent 1px),
     linear-gradient(90deg, rgba(255, 255, 255, 0.018) 1px, transparent 1px);
@@ -416,8 +416,8 @@ onMounted(() => {
   width: 100%;
   height: 100%;
   background:
-    radial-gradient(ellipse 80% 60% at 50% -20%, rgba(76, 110, 245, 0.08), transparent),
-    radial-gradient(ellipse 60% 40% at 80% 80%, rgba(16, 185, 129, 0.05), transparent);
+    radial-gradient(ellipse 80% 60% at 50% -20%, var(--glow-color), transparent),
+    radial-gradient(ellipse 60% 40% at 80% 80%, var(--glow-color-2), transparent);
   pointer-events: none;
   z-index: 0;
 }
@@ -438,7 +438,7 @@ onMounted(() => {
 }
 
 .welcome-card {
-  background: rgba(22, 27, 34, 0.85);
+  background: var(--bg-card);
   backdrop-filter: blur(24px);
   -webkit-backdrop-filter: blur(24px);
   border-radius: 24px;
@@ -447,7 +447,7 @@ onMounted(() => {
     0 1px 2px rgba(0, 0, 0, 0.2),
     0 8px 32px rgba(0, 0, 0, 0.3),
     inset 0 1px 0 rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--border-color);
   position: relative;
   overflow: hidden;
 }
@@ -459,7 +459,7 @@ onMounted(() => {
   left: 0;
   right: 0;
   height: 3px;
-  background: linear-gradient(90deg, #4c6ef5, #7c3aed, #6366f1, #4c6ef5);
+  background: var(--gradient-primary);
 }
 
 .welcome-card-inner {
@@ -473,7 +473,7 @@ onMounted(() => {
   width: 56px;
   height: 56px;
   border-radius: 50%;
-  background: linear-gradient(135deg, #4c6ef5, #7c3aed);
+  background: var(--avatar-bg);
   color: #fff;
   display: flex;
   align-items: center;
@@ -481,7 +481,7 @@ onMounted(() => {
   font-size: 24px;
   font-weight: 700;
   flex-shrink: 0;
-  box-shadow: 0 4px 20px rgba(76, 110, 245, 0.35);
+  box-shadow: 0 4px 20px rgba(var(--accent-rgb), 0.35);
 }
 
 .welcome-text {
@@ -491,14 +491,14 @@ onMounted(() => {
 .welcome-title {
   font-size: 26px;
   font-weight: 700;
-  color: rgba(255, 255, 255, 0.9);
+  color: var(--text-primary);
   margin-bottom: 6px;
   letter-spacing: -0.5px;
 }
 
 .welcome-subtitle {
   font-size: 14px;
-  color: rgba(255, 255, 255, 0.4);
+  color: var(--text-muted);
 }
 
 .welcome-meta {
@@ -515,20 +515,20 @@ onMounted(() => {
   background: rgba(255, 255, 255, 0.04);
   border-radius: 20px;
   font-size: 13px;
-  color: rgba(255, 255, 255, 0.45);
+  color: var(--text-secondary);
   font-weight: 500;
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--border-color);
 }
 
 .welcome-time svg {
   width: 16px;
   height: 16px;
-  color: #7c8aff;
+  color: var(--active-color);
 }
 
 .welcome-greeting {
   font-size: 13px;
-  color: rgba(255, 255, 255, 0.35);
+  color: var(--text-muted);
   font-weight: 500;
 }
 
@@ -540,10 +540,10 @@ onMounted(() => {
 }
 
 .feature-card {
-  background: rgba(22, 27, 34, 0.6);
+  background: var(--bg-card);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--border-color);
   border-radius: 18px;
   padding: 28px 24px 24px;
   transition: all 0.35s cubic-bezier(0.22, 0.61, 0.36, 1);
@@ -561,7 +561,7 @@ onMounted(() => {
 
 .feature-card:hover {
   transform: translateY(-8px);
-  background: rgba(22, 27, 34, 0.85);
+  background: var(--bg-card);
   border-color: rgba(255, 255, 255, 0.14);
   box-shadow:
     0 4px 6px rgba(0, 0, 0, 0.15),
@@ -574,7 +574,7 @@ onMounted(() => {
   left: -50%;
   width: 200%;
   height: 200%;
-  background: radial-gradient(circle at center, rgba(76, 110, 245, 0.06), transparent 60%);
+  background: radial-gradient(circle at center, var(--glow-color), transparent 60%);
   opacity: 0;
   transition: opacity 0.35s ease;
   pointer-events: none;
@@ -587,11 +587,11 @@ onMounted(() => {
 .card-crawler { cursor: pointer; }
 
 .card-crawler:hover {
-  border-color: rgba(99, 102, 241, 0.3);
+  border-color: rgba(var(--accent-rgb), 0.3);
   box-shadow:
     0 4px 6px rgba(0, 0, 0, 0.15),
     0 16px 48px rgba(0, 0, 0, 0.35),
-    0 0 30px rgba(99, 102, 241, 0.08);
+    0 0 30px var(--glow-color);
 }
 
 .card-notice { cursor: pointer; }
@@ -603,8 +603,8 @@ onMounted(() => {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: #818cf8;
-  box-shadow: 0 0 8px rgba(129, 140, 248, 0.5);
+  background: var(--active-color);
+  box-shadow: 0 0 8px rgba(var(--accent-rgb), 0.5);
   animation: pulse 2s ease-in-out infinite;
 }
 
@@ -644,8 +644,8 @@ onMounted(() => {
 }
 
 .crawler-icon {
-  background: rgba(99, 102, 241, 0.14);
-  color: #818cf8;
+  background: rgba(var(--accent-rgb), 0.14);
+  color: var(--active-color);
 }
 
 .stats-icon {
@@ -670,14 +670,14 @@ onMounted(() => {
 .feature-title {
   font-size: 16px;
   font-weight: 700;
-  color: rgba(255, 255, 255, 0.9);
+  color: var(--text-primary);
   margin-bottom: 6px;
   letter-spacing: -0.2px;
 }
 
 .feature-desc {
   font-size: 13px;
-  color: rgba(255, 255, 255, 0.4);
+  color: var(--text-muted);
   line-height: 1.5;
 }
 
@@ -695,7 +695,7 @@ onMounted(() => {
 }
 
 .card-crawler:hover .feature-arrow {
-  color: #818cf8;
+  color: var(--active-color);
   transform: translateX(4px);
 }
 
@@ -704,7 +704,7 @@ onMounted(() => {
   align-items: center;
   gap: 0;
   padding: 12px 0 0;
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  border-top: 1px solid var(--border-color);
 }
 
 .stat-item {
@@ -716,7 +716,7 @@ onMounted(() => {
   display: block;
   font-size: 20px;
   font-weight: 800;
-  color: rgba(255, 255, 255, 0.85);
+  color: var(--text-primary);
   letter-spacing: -0.5px;
 }
 
@@ -728,7 +728,7 @@ onMounted(() => {
 .stat-label {
   display: block;
   font-size: 11px;
-  color: rgba(255, 255, 255, 0.3);
+  color: var(--text-muted);
   margin-top: 2px;
   text-transform: uppercase;
   letter-spacing: 0.5px;
@@ -737,7 +737,7 @@ onMounted(() => {
 .stat-divider {
   width: 1px;
   height: 28px;
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--border-color);
 }
 
 .feature-quick-links {
@@ -751,7 +751,7 @@ onMounted(() => {
   background: rgba(255, 255, 255, 0.05);
   border-radius: 8px;
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--text-secondary);
   font-weight: 500;
   cursor: pointer;
   transition: all 0.25s ease;
@@ -777,7 +777,7 @@ onMounted(() => {
 .section-title {
   font-size: 18px;
   font-weight: 700;
-  color: rgba(255, 255, 255, 0.85);
+  color: var(--text-primary);
   margin-bottom: 20px;
   letter-spacing: -0.3px;
 }
@@ -797,10 +797,10 @@ onMounted(() => {
 }
 
 .data-card {
-  background: rgba(22, 27, 34, 0.6);
+  background: var(--bg-card);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--border-color);
   border-radius: 16px;
   padding: 22px 20px;
   display: flex;
@@ -810,7 +810,7 @@ onMounted(() => {
 }
 
 .data-card:hover {
-  background: rgba(22, 27, 34, 0.85);
+  background: var(--bg-card);
   border-color: rgba(255, 255, 255, 0.12);
   transform: translateY(-2px);
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
@@ -832,8 +832,8 @@ onMounted(() => {
 }
 
 .data-card-icon.blue {
-  background: rgba(76, 110, 245, 0.15);
-  color: #7c8aff;
+  background: rgba(var(--accent-rgb), 0.15);
+  color: var(--active-color);
 }
 
 .data-card-icon.green {
@@ -860,7 +860,7 @@ onMounted(() => {
 .data-card-value {
   font-size: 24px;
   font-weight: 800;
-  color: rgba(255, 255, 255, 0.9);
+  color: var(--text-primary);
   letter-spacing: -0.5px;
 }
 
@@ -871,7 +871,7 @@ onMounted(() => {
 
 .data-card-label {
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.35);
+  color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }
@@ -908,10 +908,10 @@ onMounted(() => {
 }
 
 .chart-card {
-  background: rgba(22, 27, 34, 0.5);
+  background: var(--bg-card);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--border-color);
   border-radius: 16px;
   padding: 24px;
 }
@@ -919,7 +919,7 @@ onMounted(() => {
 .chart-title {
   font-size: 14px;
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.55);
+  color: var(--text-secondary);
   margin-bottom: 16px;
 }
 
@@ -939,7 +939,7 @@ onMounted(() => {
 
 .chart-line {
   fill: none;
-  stroke: #4c6ef5;
+  stroke: var(--accent-primary);
   stroke-width: 2;
   stroke-linecap: round;
   stroke-linejoin: round;
@@ -954,7 +954,7 @@ onMounted(() => {
 
 .chart-labels span {
   font-size: 11px;
-  color: rgba(255, 255, 255, 0.2);
+  color: var(--text-muted);
 }
 
 .quick-actions-section {
@@ -974,12 +974,12 @@ onMounted(() => {
   align-items: center;
   gap: 14px;
   padding: 20px 24px;
-  background: rgba(22, 27, 34, 0.6);
+  background: var(--bg-card);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--border-color);
   border-radius: 16px;
-  color: rgba(255, 255, 255, 0.85);
+  color: var(--text-primary);
   cursor: pointer;
   transition: all 0.3s ease;
   font-size: 14px;
@@ -987,13 +987,13 @@ onMounted(() => {
 }
 
 .quick-action-btn:hover {
-  background: rgba(22, 27, 34, 0.9);
+  background: var(--bg-card);
   border-color: rgba(255, 255, 255, 0.14);
   transform: translateY(-3px);
   box-shadow:
     0 4px 6px rgba(0, 0, 0, 0.15),
     0 12px 36px rgba(0, 0, 0, 0.3),
-    0 0 24px rgba(76, 110, 245, 0.06);
+    0 0 24px var(--glow-color);
 }
 
 .qa-icon {
@@ -1003,8 +1003,8 @@ onMounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(76, 110, 245, 0.14);
-  color: #818cf8;
+  background: rgba(var(--accent-rgb), 0.14);
+  color: var(--active-color);
   flex-shrink: 0;
 }
 
@@ -1031,7 +1031,7 @@ onMounted(() => {
 .qa-text {
   font-size: 14px;
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.75);
+  color: var(--text-secondary);
   letter-spacing: -0.2px;
 }
 

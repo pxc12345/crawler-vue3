@@ -271,7 +271,7 @@ onMounted(() => {
 <style scoped>
 .alerts-page {
   min-height: 100vh;
-  background-color: #0d1117;
+  background-color: var(--bg-primary);
   background-image:
     linear-gradient(rgba(255, 255, 255, 0.018) 1px, transparent 1px),
     linear-gradient(90deg, rgba(255, 255, 255, 0.018) 1px, transparent 1px);
@@ -286,8 +286,8 @@ onMounted(() => {
   width: 100%;
   height: 100%;
   background:
-    radial-gradient(ellipse 80% 60% at 50% -20%, rgba(76, 110, 245, 0.06), transparent),
-    radial-gradient(ellipse 60% 40% at 80% 80%, rgba(16, 185, 129, 0.04), transparent);
+    radial-gradient(ellipse 80% 60% at 50% -20%, rgba(var(--accent-rgb), 0.06), transparent),
+    radial-gradient(ellipse 60% 40% at 80% 80%, rgba(52, 211, 153, 0.04), transparent);
   pointer-events: none;
   z-index: 0;
 }
@@ -316,7 +316,7 @@ onMounted(() => {
 .page-title {
   font-size: 26px;
   font-weight: 700;
-  color: rgba(255, 255, 255, 0.9);
+  color: var(--text-primary);
   letter-spacing: -0.5px;
 }
 
@@ -367,17 +367,17 @@ onMounted(() => {
 .type-filter {
   display: flex;
   gap: 4px;
-  background: rgba(22, 27, 34, 0.6);
+  background: var(--bg-card);
   border-radius: 10px;
   padding: 4px;
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--border-color);
 }
 
 .type-btn {
   padding: 7px 15px;
   font-size: 12px;
   font-weight: 500;
-  color: rgba(255, 255, 255, 0.45);
+  color: var(--text-secondary);
   background: transparent;
   border: none;
   border-radius: 8px;
@@ -386,7 +386,7 @@ onMounted(() => {
 }
 
 .type-btn:hover { color: rgba(255, 255, 255, 0.75); }
-.type-btn.active { color: #7c8aff; background: rgba(76, 110, 245, 0.15); font-weight: 600; }
+.type-btn.active { color: var(--accent-color); background: rgba(var(--accent-rgb), 0.15); font-weight: 600; }
 
 .read-toggle {
   display: flex;
@@ -401,7 +401,7 @@ onMounted(() => {
 
 .skeleton-list { display: flex; flex-direction: column; gap: 12px; }
 .skeleton-card {
-  background: rgba(22, 27, 34, 0.5);
+  background: var(--bg-card);
   border-radius: 16px;
   padding: 24px;
   border: 1px solid rgba(255, 255, 255, 0.04);
@@ -429,16 +429,16 @@ onMounted(() => {
   color: rgba(255, 255, 255, 0.1);
 }
 .empty-icon svg { width: 36px; height: 36px; }
-.empty-text { font-size: 18px; font-weight: 600; color: rgba(255, 255, 255, 0.35); margin-bottom: 8px; }
+.empty-text { font-size: 18px; font-weight: 600; color: var(--text-muted); margin-bottom: 8px; }
 .empty-desc { font-size: 13px; color: rgba(255, 255, 255, 0.2); }
 
 .alert-list { display: flex; flex-direction: column; gap: 10px; }
 
 .alert-card {
-  background: rgba(22, 27, 34, 0.55);
+  background: var(--bg-card);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--border-color);
   border-radius: 16px;
   overflow: hidden;
   cursor: pointer;
@@ -446,7 +446,7 @@ onMounted(() => {
 }
 
 .alert-card:hover {
-  background: rgba(22, 27, 34, 0.75);
+  background: var(--bg-card);
   border-color: rgba(255, 255, 255, 0.1);
 }
 
@@ -566,7 +566,7 @@ onMounted(() => {
 
 .page-btn {
   width: 38px; height: 38px; display: flex; align-items: center; justify-content: center;
-  background: rgba(22, 27, 34, 0.6); border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--bg-card); border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 10px; color: rgba(255, 255, 255, 0.5);
   cursor: pointer; transition: all 0.25s ease;
 }

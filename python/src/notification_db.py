@@ -21,6 +21,7 @@ class NotificationDB:
             if self.connection:
                 self.connection.close()
             self.connection = pymysql.connect(**self.db_config)
+            self._init_db()
         except Exception as e:
             print(f"Database connection error: {e}")
             raise
@@ -55,9 +56,35 @@ class NotificationDB:
                     locked_until DATETIME,
                     last_login_at DATETIME,
                     created_at DATETIME,
-                    updated_at DATETIME
+                    updated_at DATETIME,
+                    nickname VARCHAR(100) DEFAULT '' COMMENT '昵称',
+                    avatar_url VARCHAR(500) DEFAULT '' COMMENT '头像URL',
+                    bio VARCHAR(500) DEFAULT '' COMMENT '个人简介'
                 )
             """)
+
+            for col, col_def in [
+                ('nickname', "VARCHAR(100) DEFAULT '' COMMENT '昵称'"),
+                ('avatar_url', "VARCHAR(500) DEFAULT '' COMMENT '头像URL'"),
+                ('bio', "VARCHAR(500) DEFAULT '' COMMENT '个人简介'"),
+            ]:
+                try:
+                    cursor.execute(
+                        "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='users' AND column_name=%s",
+                        (col,)
+                    )
+                    if cursor.fetchone()[0] == 0:
+                        try:
+                            cursor.execute(f"ALTER TABLE users ADD COLUMN `{col}` {col_def}")
+                            print(f"成功添加列: {col}")
+                        except pymysql.Error as e:
+                            if e.args[0] == 1060:
+                                print(f"列已存在: {col}")
+                            else:
+                                raise
+                except Exception as e:
+                    print(f"检查/添加列 {col} 失败: {e}")
+            self.connection.commit()
 
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS verification_codes (
@@ -120,15 +147,19 @@ class NotificationDB:
     def get_user_by_email(self, email):
         self._ensure_connection()
         with self.connection.cursor() as cursor:
-            cursor.execute("SELECT id, email, phone, password_hash, created_at FROM users WHERE email = %s", (email,))
+            cursor.execute("SELECT id, username, email, phone, password_hash, nickname, avatar_url, bio, created_at FROM users WHERE email = %s", (email,))
             row = cursor.fetchone()
             if row:
                 return {
                     "id": row[0],
-                    "email": row[1],
-                    "phone": row[2],
-                    "password_hash": row[3],
-                    "created_at": row[4]
+                    "username": row[1],
+                    "email": row[2],
+                    "phone": row[3],
+                    "password_hash": row[4],
+                    "nickname": row[5] or '',
+                    "avatar_url": row[6] or '',
+                    "bio": row[7] or '',
+                    "created_at": row[8]
                 }
             return None
 
@@ -193,7 +224,7 @@ class NotificationDB:
     def get_user_by_id(self, user_id):
         self._ensure_connection()
         with self.connection.cursor() as cursor:
-            cursor.execute("SELECT id, username, email, phone, password_hash, login_attempts, locked_until, last_login_at, created_at FROM users WHERE id = %s", (user_id,))
+            cursor.execute("SELECT id, username, email, phone, password_hash, nickname, avatar_url, bio, login_attempts, locked_until, last_login_at, created_at FROM users WHERE id = %s", (user_id,))
             row = cursor.fetchone()
             if row:
                 return {
@@ -202,10 +233,13 @@ class NotificationDB:
                     "email": row[2],
                     "phone": row[3],
                     "password_hash": row[4],
-                    "login_attempts": row[5],
-                    "locked_until": row[6],
-                    "last_login_at": row[7],
-                    "created_at": row[8]
+                    "nickname": row[5] or '',
+                    "avatar_url": row[6] or '',
+                    "bio": row[7] or '',
+                    "login_attempts": row[8],
+                    "locked_until": row[9],
+                    "last_login_at": row[10],
+                    "created_at": row[11]
                 }
             return None
 
@@ -250,6 +284,33 @@ class NotificationDB:
                     "created_at": row[8]
                 }
             return None
+
+    def update_user_profile(self, user_id, nickname=None, avatar_url=None, bio=None):
+        self._ensure_connection()
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        fields = []
+        params = []
+        if nickname is not None:
+            fields.append("nickname = %s")
+            params.append(nickname)
+        if avatar_url is not None:
+            fields.append("avatar_url = %s")
+            params.append(avatar_url)
+        if bio is not None:
+            fields.append("bio = %s")
+            params.append(bio)
+        if not fields:
+            return False, "没有需要更新的字段"
+        fields.append("updated_at = %s")
+        params.append(now)
+        params.append(user_id)
+        with self.connection.cursor() as cursor:
+            cursor.execute(
+                f"UPDATE users SET {', '.join(fields)} WHERE id = %s",
+                params
+            )
+            self.connection.commit()
+        return True, None
 
     def update_user_password(self, user_id, password_hash):
         self._ensure_connection()

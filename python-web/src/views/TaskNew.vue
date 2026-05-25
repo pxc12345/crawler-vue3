@@ -155,10 +155,10 @@ async function createTask() {
 <style scoped>
 .task-new-page {
   min-height: 100vh;
-  background-color: #0d1117;
+  background-color: var(--bg-primary);
   background-image:
-    linear-gradient(rgba(255, 255, 255, 0.018) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.018) 1px, transparent 1px);
+    linear-gradient(var(--border-color) 1px, transparent 1px),
+    linear-gradient(90deg, var(--border-color) 1px, transparent 1px);
   background-size: 40px 40px;
 }
 
@@ -181,16 +181,16 @@ async function createTask() {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(22, 27, 34, 0.6);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
   border-radius: 12px;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--text-secondary);
   cursor: pointer;
   transition: all 0.25s ease;
 }
 
 .btn-back:hover {
-  color: rgba(255, 255, 255, 0.85);
+  color: var(--text-primary);
   border-color: rgba(255, 255, 255, 0.15);
 }
 
@@ -202,13 +202,13 @@ async function createTask() {
 .new-title {
   font-size: 24px;
   font-weight: 700;
-  color: rgba(255, 255, 255, 0.9);
+  color: var(--text-primary);
 }
 
 .config-form {
-  background: rgba(22, 27, 34, 0.55);
+  background: var(--bg-card);
   backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--border-color);
   border-radius: 16px;
   padding: 28px;
   display: flex;
@@ -230,7 +230,7 @@ async function createTask() {
   display: block;
   font-size: 12px;
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.4);
+  color: var(--text-muted);
   margin-bottom: 8px;
   text-transform: uppercase;
   letter-spacing: 0.5px;
@@ -241,20 +241,20 @@ async function createTask() {
   padding: 11px 16px;
   font-size: 14px;
   background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--border-color);
   border-radius: 10px;
-  color: rgba(255, 255, 255, 0.85);
+  color: var(--text-primary);
   outline: none;
   transition: all 0.25s ease;
 }
 
 .form-input:focus {
-  border-color: rgba(76, 110, 245, 0.4);
-  box-shadow: 0 0 0 3px rgba(76, 110, 245, 0.08);
+  border-color: rgba(var(--accent-rgb), 0.4);
+  box-shadow: 0 0 0 3px var(--glow-color);
 }
 
 .form-input::placeholder {
-  color: rgba(255, 255, 255, 0.2);
+  color: var(--text-muted);
 }
 
 .form-actions {
@@ -271,23 +271,23 @@ async function createTask() {
   padding: 11px 22px;
   font-size: 13px;
   font-weight: 600;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--border-color);
   border-radius: 10px;
   cursor: pointer;
   transition: all 0.25s ease;
-  background: rgba(255, 255, 255, 0.04);
-  color: rgba(255, 255, 255, 0.6);
+  background: var(--border-color);
+  color: var(--text-secondary);
 }
 
 .action-btn.primary {
-  background: linear-gradient(135deg, #4c6ef5, #7c3aed);
+  background: var(--gradient-primary);
   color: #fff;
   border: none;
-  box-shadow: 0 4px 14px rgba(76, 110, 245, 0.3);
+  box-shadow: 0 4px 14px rgba(var(--accent-rgb), 0.3);
 }
 
 .action-btn.primary:hover {
-  box-shadow: 0 6px 20px rgba(76, 110, 245, 0.45);
+  box-shadow: 0 6px 20px rgba(var(--accent-rgb), 0.45);
   transform: translateY(-1px);
 }
 
@@ -299,7 +299,7 @@ async function createTask() {
 
 .action-btn.cancel:hover {
   background: rgba(255, 255, 255, 0.08);
-  color: rgba(255, 255, 255, 0.75);
+  color: var(--text-primary);
 }
 
 @media (max-width: 768px) {

@@ -1,6 +1,9 @@
 <template>
   <div class="container">
     <div class="card">
+      <div class="logo-wrapper">
+        <img src="/logo.png" alt="CrawlMaster" class="login-logo" />
+      </div>
       <h1 class="card-title">登录</h1>
       
       <div v-if="errorMessage" class="alert alert-error">

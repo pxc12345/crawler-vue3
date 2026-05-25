@@ -31,5 +31,21 @@ export const systemAPI = {
 
   saveUserPreferences(data) {
     return api.put('/system/user/preferences', data)
+  },
+
+  getSettingsBatch() {
+    return api.get('/system/settings/batch')
+  },
+
+  saveSettingsBatch(data) {
+    return api.put('/system/settings/batch', data)
+  },
+
+  getTheme() {
+    return api.get('/user/theme')
+  },
+
+  saveTheme(theme) {
+    return api.put('/user/theme', { theme })
   }
 }

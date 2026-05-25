@@ -513,10 +513,10 @@ watch(activeTab, (val) => {
 <style scoped>
 .task-detail-page {
   min-height: 100vh;
-  background-color: #0d1117;
+  background-color: var(--bg-primary);
   background-image:
-    linear-gradient(rgba(255, 255, 255, 0.018) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.018) 1px, transparent 1px);
+    linear-gradient(var(--border-color) 1px, transparent 1px),
+    linear-gradient(90deg, var(--border-color) 1px, transparent 1px);
   background-size: 40px 40px;
 }
 
@@ -555,17 +555,17 @@ watch(activeTab, (val) => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(22, 27, 34, 0.6);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
   border-radius: 12px;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--text-secondary);
   cursor: pointer;
   transition: all 0.25s ease;
   flex-shrink: 0;
 }
 
 .btn-back:hover {
-  color: rgba(255, 255, 255, 0.85);
+  color: var(--text-primary);
   border-color: rgba(255, 255, 255, 0.15);
 }
 
@@ -582,7 +582,7 @@ watch(activeTab, (val) => {
 .detail-title {
   font-size: 24px;
   font-weight: 700;
-  color: rgba(255, 255, 255, 0.9);
+  color: var(--text-primary);
   margin-bottom: 8px;
   letter-spacing: -0.4px;
 }
@@ -619,10 +619,10 @@ watch(activeTab, (val) => {
   animation: pulse 1.5s ease-in-out infinite;
 }
 
-.status-pending { background: rgba(76, 110, 245, 0.12); color: #7c8aff; }
-.status-pending .status-dot { background: #7c8aff; }
-.status-completed { background: rgba(255, 255, 255, 0.05); color: rgba(255, 255, 255, 0.4); }
-.status-completed .status-dot { background: rgba(255, 255, 255, 0.35); }
+.status-pending { background: var(--active-bg); color: var(--active-color); }
+.status-pending .status-dot { background: var(--active-color); }
+.status-completed { background: rgba(255, 255, 255, 0.05); color: var(--text-muted); }
+.status-completed .status-dot { background: var(--text-muted); }
 .status-failed { background: rgba(239, 68, 68, 0.12); color: #f87171; }
 .status-failed .status-dot { background: #f87171; }
 
@@ -638,16 +638,16 @@ watch(activeTab, (val) => {
   padding: 6px 14px;
   font-size: 12px;
   font-weight: 500;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--border-color);
+  border: 1px solid var(--border-color);
   border-radius: 8px;
-  color: rgba(255, 255, 255, 0.45);
+  color: var(--text-muted);
   cursor: pointer;
   transition: all 0.2s ease;
 }
 
 .btn-version:hover {
-  color: rgba(255, 255, 255, 0.8);
+  color: var(--text-primary);
   background: rgba(255, 255, 255, 0.06);
   border-color: rgba(255, 255, 255, 0.15);
 }
@@ -660,7 +660,7 @@ watch(activeTab, (val) => {
 .tab-nav {
   display: flex;
   gap: 4px;
-  background: rgba(22, 27, 34, 0.5);
+  background: var(--bg-card);
   border-radius: 12px;
   padding: 5px;
   margin-bottom: 24px;
@@ -672,7 +672,7 @@ watch(activeTab, (val) => {
   padding: 11px 20px;
   font-size: 13px;
   font-weight: 500;
-  color: rgba(255, 255, 255, 0.4);
+  color: var(--text-muted);
   background: transparent;
   border: none;
   border-radius: 9px;
@@ -691,10 +691,10 @@ watch(activeTab, (val) => {
 }
 
 .tab-panel {
-  background: rgba(22, 27, 34, 0.55);
+  background: var(--bg-card);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--border-color);
   border-radius: 16px;
   padding: 28px;
 }
@@ -719,7 +719,7 @@ watch(activeTab, (val) => {
   display: block;
   font-size: 12px;
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.4);
+  color: var(--text-muted);
   margin-bottom: 8px;
   text-transform: uppercase;
   letter-spacing: 0.5px;
@@ -730,16 +730,16 @@ watch(activeTab, (val) => {
   padding: 11px 16px;
   font-size: 14px;
   background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--border-color);
   border-radius: 10px;
-  color: rgba(255, 255, 255, 0.85);
+  color: var(--text-primary);
   outline: none;
   transition: all 0.25s ease;
 }
 
 .form-input:focus {
-  border-color: rgba(76, 110, 245, 0.4);
-  box-shadow: 0 0 0 3px rgba(76, 110, 245, 0.08);
+  border-color: rgba(var(--accent-rgb), 0.4);
+  box-shadow: 0 0 0 3px var(--glow-color);
 }
 
 .form-input:disabled {
@@ -753,16 +753,16 @@ watch(activeTab, (val) => {
   font-size: 13px;
   font-family: 'SF Mono', 'Fira Code', monospace;
   background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--border-color);
   border-radius: 10px;
-  color: rgba(255, 255, 255, 0.85);
+  color: var(--text-primary);
   outline: none;
   resize: vertical;
   transition: all 0.25s ease;
 }
 
 .form-textarea:focus {
-  border-color: rgba(76, 110, 245, 0.4);
+  border-color: rgba(var(--accent-rgb), 0.4);
 }
 
 .form-textarea:disabled {
@@ -783,24 +783,24 @@ watch(activeTab, (val) => {
   padding: 11px 22px;
   font-size: 13px;
   font-weight: 600;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--border-color);
   border-radius: 10px;
   cursor: pointer;
   transition: all 0.25s ease;
-  background: rgba(255, 255, 255, 0.04);
-  color: rgba(255, 255, 255, 0.6);
+  background: var(--border-color);
+  color: var(--text-secondary);
 }
 
 .action-btn svg { width: 16px; height: 16px; }
 
 .action-btn.primary {
-  background: linear-gradient(135deg, #4c6ef5, #7c3aed);
+  background: var(--gradient-primary);
   color: #fff;
   border: none;
-  box-shadow: 0 4px 14px rgba(76, 110, 245, 0.3);
+  box-shadow: 0 4px 14px rgba(var(--accent-rgb), 0.3);
 }
 
-.action-btn.primary:hover { box-shadow: 0 6px 20px rgba(76, 110, 245, 0.45); transform: translateY(-1px); }
+.action-btn.primary:hover { box-shadow: 0 6px 20px rgba(var(--accent-rgb), 0.45); transform: translateY(-1px); }
 
 .action-btn.success {
   background: rgba(16, 185, 129, 0.15);
@@ -811,11 +811,11 @@ watch(activeTab, (val) => {
 .action-btn.success:hover { background: rgba(16, 185, 129, 0.22); }
 
 .action-btn.cancel {
-  background: rgba(255, 255, 255, 0.04);
-  color: rgba(255, 255, 255, 0.5);
+  background: var(--border-color);
+  color: var(--text-secondary);
 }
 
-.action-btn.cancel:hover { background: rgba(255, 255, 255, 0.08); color: rgba(255, 255, 255, 0.75); }
+.action-btn.cancel:hover { background: rgba(255, 255, 255, 0.08); color: var(--text-primary); }
 
 .log-controls {
   display: flex;
@@ -876,7 +876,7 @@ watch(activeTab, (val) => {
 }
 
 .log-time {
-  color: rgba(255, 255, 255, 0.2);
+  color: var(--text-muted);
   flex-shrink: 0;
 }
 
@@ -890,7 +890,7 @@ watch(activeTab, (val) => {
 .log-level.warn { color: #fbbf24; }
 .log-level.error { color: #f87171; }
 
-.log-msg { color: rgba(255, 255, 255, 0.55); }
+.log-msg { color: var(--text-secondary); }
 
 .log-msg :deep(.kw) { color: #7c8aff; }
 .log-msg :deep(.err) { color: #f87171; }
@@ -952,7 +952,7 @@ watch(activeTab, (val) => {
 
 .timeline-card {
   background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--border-color);
   border-radius: 12px;
   padding: 16px 20px;
 }
@@ -1067,7 +1067,7 @@ watch(activeTab, (val) => {
 .overview-title {
   font-size: 18px;
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.85);
+  color: var(--text-primary);
 }
 
 .overview-badge {
@@ -1096,7 +1096,7 @@ watch(activeTab, (val) => {
   gap: 16px;
   padding: 20px;
   background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--border-color);
   border-radius: 12px;
 }
 
@@ -1125,18 +1125,18 @@ watch(activeTab, (val) => {
 .stat-value {
   font-size: 24px;
   font-weight: 700;
-  color: rgba(255, 255, 255, 0.9);
+  color: var(--text-primary);
 }
 
 .stat-label {
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.35);
+  color: var(--text-muted);
 }
 
 .section-title {
   font-size: 13px;
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--text-secondary);
   margin-bottom: 12px;
   text-transform: uppercase;
   letter-spacing: 0.5px;
@@ -1173,13 +1173,13 @@ watch(activeTab, (val) => {
 
 .type-count {
   font-size: 13px;
-  color: rgba(255, 255, 255, 0.4);
+  color: var(--text-muted);
 }
 
 .last-time {
   font-size: 14px;
   font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--text-secondary);
 }
 
 @media (max-width: 768px) {

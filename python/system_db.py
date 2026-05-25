@@ -86,6 +86,17 @@ class SystemDB:
                     COMMENT='用户偏好设置表'
                 """)
 
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS `user_theme_prefs` (
+                        `id` INT AUTO_INCREMENT PRIMARY KEY COMMENT '主键ID',
+                        `user_id` INT NOT NULL DEFAULT 0 COMMENT '用户ID',
+                        `theme_name` VARCHAR(50) NOT NULL DEFAULT 'default' COMMENT '主题名称',
+                        `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+                        UNIQUE INDEX `idx_theme_user_id` (`user_id`)
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+                    COMMENT='用户主题偏好表'
+                """)
+
             conn.commit()
             conn.close()
             return True
@@ -322,6 +333,107 @@ class SystemDB:
                     })
             conn.commit()
             return True, None
+        except pymysql.Error as e:
+            return False, str(e)
+        finally:
+            if conn:
+                conn.close()
+
+
+    def get_theme(self, user_id):
+        conn = None
+        try:
+            conn = pymysql.connect(**self._config)
+            with conn.cursor(pymysql.cursors.DictCursor) as cursor:
+                try:
+                    cursor.execute(
+                        "SELECT `theme_name` FROM `user_theme_prefs` WHERE `user_id` = %s",
+                        (user_id,)
+                    )
+                    row = cursor.fetchone()
+                    return row['theme_name'] if row else 'default'
+                except pymysql.OperationalError as e:
+                    if e.args[0] == 1146:
+                        return 'default'
+                    raise
+        except pymysql.Error:
+            return 'default'
+        finally:
+            if conn:
+                conn.close()
+
+    def save_theme(self, user_id, theme_name):
+        conn = None
+        try:
+            conn = pymysql.connect(**self._config)
+            with conn.cursor(pymysql.cursors.DictCursor) as cursor:
+                try:
+                    cursor.execute(
+                        "SELECT `id` FROM `user_theme_prefs` WHERE `user_id` = %s",
+                        (user_id,)
+                    )
+                    existing = cursor.fetchone()
+                    if existing:
+                        cursor.execute(
+                            "UPDATE `user_theme_prefs` SET `theme_name` = %s WHERE `id` = %s",
+                            (theme_name, existing["id"])
+                        )
+                    else:
+                        cursor.execute(
+                            "INSERT INTO `user_theme_prefs` (`user_id`, `theme_name`) VALUES (%s, %s)",
+                            (user_id, theme_name)
+                        )
+                except pymysql.OperationalError as e:
+                    if e.args[0] == 1146:
+                        cursor.execute("""
+                            CREATE TABLE IF NOT EXISTS `user_theme_prefs` (
+                                `id` INT AUTO_INCREMENT PRIMARY KEY,
+                                `user_id` INT NOT NULL DEFAULT 0,
+                                `theme_name` VARCHAR(50) NOT NULL DEFAULT 'default',
+                                `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                                UNIQUE INDEX `idx_theme_user_id` (`user_id`)
+                            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+                        """)
+                        cursor.execute(
+                            "INSERT INTO `user_theme_prefs` (`user_id`, `theme_name`) VALUES (%s, %s)",
+                            (user_id, theme_name)
+                        )
+                    else:
+                        raise
+            conn.commit()
+            return True, None
+        except pymysql.Error as e:
+            return False, str(e)
+        finally:
+            if conn:
+                conn.close()
+
+    def save_settings_batch(self, settings_dict):
+        conn = None
+        try:
+            conn = pymysql.connect(**self._config)
+            saved = 0
+            with conn.cursor() as cursor:
+                for key, value in settings_dict.items():
+                    cursor.execute(
+                        "SELECT `id` FROM `system_settings` WHERE `key` = %(key)s",
+                        {"key": key}
+                    )
+                    existing = cursor.fetchone()
+                    val = json.dumps(value) if not isinstance(value, str) else value
+                    if existing:
+                        cursor.execute(
+                            "UPDATE `system_settings` SET `value` = %(value)s WHERE `id` = %(id)s",
+                            {"value": val, "id": existing["id"]}
+                        )
+                    else:
+                        cursor.execute(
+                            "INSERT INTO `system_settings` (`key`, `value`, `description`) VALUES (%(key)s, %(value)s, %(description)s)",
+                            {"key": key, "value": val, "description": ""}
+                        )
+                    saved += 1
+            conn.commit()
+            return True, saved
         except pymysql.Error as e:
             return False, str(e)
         finally:

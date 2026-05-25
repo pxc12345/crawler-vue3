@@ -473,7 +473,7 @@ onUnmounted(() => {
 <style scoped>
 .tasks-page {
   min-height: 100vh;
-  background-color: #0d1117;
+  background-color: var(--bg-primary);
   background-image:
     linear-gradient(rgba(255, 255, 255, 0.018) 1px, transparent 1px),
     linear-gradient(90deg, rgba(255, 255, 255, 0.018) 1px, transparent 1px);
@@ -518,13 +518,13 @@ onUnmounted(() => {
 .page-title {
   font-size: 26px;
   font-weight: 700;
-  color: rgba(255, 255, 255, 0.9);
+  color: var(--text-primary);
   letter-spacing: -0.5px;
 }
 
 .task-count {
   font-size: 13px;
-  color: rgba(255, 255, 255, 0.35);
+  color: var(--text-muted);
   font-weight: 500;
 }
 
@@ -533,7 +533,7 @@ onUnmounted(() => {
   align-items: center;
   gap: 8px;
   padding: 12px 22px;
-  background: linear-gradient(135deg, #4c6ef5, #7c3aed);
+  background: var(--gradient-primary);
   color: #fff;
   border: none;
   border-radius: 12px;
@@ -541,7 +541,7 @@ onUnmounted(() => {
   font-weight: 600;
   cursor: pointer;
   transition: all 0.25s ease;
-  box-shadow: 0 4px 16px rgba(76, 110, 245, 0.3);
+  box-shadow: 0 4px 16px rgba(var(--accent-rgb), 0.3);
 }
 
 .btn-create:hover {
@@ -572,7 +572,7 @@ onUnmounted(() => {
 .status-filter {
   display: flex;
   gap: 4px;
-  background: rgba(22, 27, 34, 0.6);
+  background: var(--bg-card);
   border-radius: 10px;
   padding: 4px;
   border: 1px solid rgba(255, 255, 255, 0.06);
@@ -582,7 +582,7 @@ onUnmounted(() => {
   padding: 7px 15px;
   font-size: 12px;
   font-weight: 500;
-  color: rgba(255, 255, 255, 0.45);
+  color: var(--text-secondary);
   background: transparent;
   border: none;
   border-radius: 8px;
@@ -591,13 +591,13 @@ onUnmounted(() => {
 }
 
 .status-btn:hover {
-  color: rgba(255, 255, 255, 0.75);
+  color: var(--text-primary);
   background: rgba(255, 255, 255, 0.04);
 }
 
 .status-btn.active {
-  color: #7c8aff;
-  background: rgba(76, 110, 245, 0.15);
+  color: var(--active-color);
+  background: var(--active-bg);
   font-weight: 600;
 }
 
@@ -620,16 +620,16 @@ onUnmounted(() => {
   width: 240px;
   padding: 10px 14px 10px 40px;
   font-size: 13px;
-  background: rgba(22, 27, 34, 0.6);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
   border-radius: 10px;
-  color: rgba(255, 255, 255, 0.85);
+  color: var(--text-primary);
   outline: none;
   transition: all 0.25s ease;
 }
 
 .search-input::placeholder {
-  color: rgba(255, 255, 255, 0.2);
+  color: var(--text-muted);
 }
 
 .search-input:focus {
@@ -643,16 +643,16 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(22, 27, 34, 0.6);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
   border-radius: 10px;
-  color: rgba(255, 255, 255, 0.45);
+  color: var(--text-muted);
   cursor: pointer;
   transition: all 0.25s ease;
 }
 
 .btn-refresh:hover {
-  color: rgba(255, 255, 255, 0.85);
+  color: var(--text-primary);
   border-color: rgba(255, 255, 255, 0.15);
   background: rgba(255, 255, 255, 0.05);
 }
@@ -669,15 +669,15 @@ onUnmounted(() => {
 }
 
 .skeleton-card {
-  background: rgba(22, 27, 34, 0.5);
+  background: var(--bg-card);
   border-radius: 16px;
   padding: 28px;
-  border: 1px solid rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border-color);
 }
 
 .skeleton-line {
   height: 14px;
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--border-color);
   border-radius: 7px;
   margin-bottom: 10px;
   animation: shimmer 1.5s ease-in-out infinite;
@@ -717,13 +717,13 @@ onUnmounted(() => {
 .empty-text {
   font-size: 18px;
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.35);
+  color: var(--text-muted);
   margin-bottom: 8px;
 }
 
 .empty-desc {
   font-size: 13px;
-  color: rgba(255, 255, 255, 0.2);
+  color: var(--text-muted);
 }
 
 .task-list {
@@ -733,10 +733,10 @@ onUnmounted(() => {
 }
 
 .task-card {
-  background: rgba(22, 27, 34, 0.55);
+  background: var(--bg-card);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--border-color);
   border-radius: 16px;
   padding: 22px 26px;
   cursor: pointer;
@@ -744,7 +744,7 @@ onUnmounted(() => {
 }
 
 .task-card:hover {
-  background: rgba(22, 27, 34, 0.8);
+  background: var(--bg-card);
   border-color: rgba(255, 255, 255, 0.12);
   transform: translateY(-2px);
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
@@ -791,14 +791,14 @@ onUnmounted(() => {
 .task-name {
   font-size: 15px;
   font-weight: 700;
-  color: rgba(255, 255, 255, 0.9);
+  color: var(--text-primary);
   margin-bottom: 4px;
   letter-spacing: -0.2px;
 }
 
 .task-url {
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.3);
+  color: var(--text-muted);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -975,7 +975,7 @@ onUnmounted(() => {
   display: flex;
   gap: 8px;
   padding-top: 14px;
-  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  border-top: 1px solid var(--border-color);
 }
 
 .task-btn {
@@ -985,10 +985,10 @@ onUnmounted(() => {
   padding: 7px 14px;
   font-size: 12px;
   font-weight: 600;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--border-color);
+  border: 1px solid var(--border-color);
   border-radius: 8px;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--text-secondary);
   cursor: pointer;
   transition: all 0.2s ease;
 }
@@ -999,7 +999,7 @@ onUnmounted(() => {
 }
 
 .task-btn:hover {
-  color: rgba(255, 255, 255, 0.85);
+  color: var(--text-primary);
   background: rgba(255, 255, 255, 0.08);
 }
 
@@ -1016,9 +1016,9 @@ onUnmounted(() => {
 }
 
 .task-btn.btn-edit:hover {
-  color: #7c8aff;
-  border-color: rgba(76, 110, 245, 0.3);
-  background: rgba(76, 110, 245, 0.1);
+  color: var(--active-color);
+  border-color: rgba(var(--accent-rgb), 0.3);
+  background: var(--active-bg);
 }
 
 .task-btn.btn-delete:hover {
@@ -1041,16 +1041,16 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(22, 27, 34, 0.6);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
   border-radius: 10px;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--text-secondary);
   cursor: pointer;
   transition: all 0.25s ease;
 }
 
 .page-btn:hover:not(:disabled) {
-  color: rgba(255, 255, 255, 0.85);
+  color: var(--text-primary);
   border-color: rgba(255, 255, 255, 0.15);
 }
 
@@ -1067,7 +1067,7 @@ onUnmounted(() => {
 .page-info {
   font-size: 13px;
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.4);
+  color: var(--text-muted);
 }
 
 @media (max-width: 768px) {

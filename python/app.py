@@ -47,6 +47,7 @@ task_db.connect()
 alert_db.connect()
 proxy_db.connect()
 system_db.connect()
+notification_db._init_db()
 
 
 def is_valid_email(email):
@@ -304,6 +305,9 @@ def get_profile():
                 'username': user['username'],
                 'email': user['email'],
                 'phone': user['phone'],
+                'nickname': user.get('nickname', ''),
+                'avatar_url': user.get('avatar_url', ''),
+                'bio': user.get('bio', ''),
                 'last_login_at': user['last_login_at'],
                 'created_at': user['created_at']
             }
@@ -311,6 +315,31 @@ def get_profile():
 
     except Exception as e:
         return jsonify({'success': False, 'message': '获取用户信息失败', 'code': 'GET_PROFILE_FAILED', 'error': str(e)}), 500
+
+
+@app.route('/api/user/profile', methods=['PUT'])
+@auth_service.login_required
+def update_profile():
+    try:
+        data = request.get_json()
+        nickname = data.get('nickname')
+        avatar_url = data.get('avatar_url')
+        bio = data.get('bio')
+
+        success, msg = notification_db.update_user_profile(
+            user_id=request.user_id,
+            nickname=nickname,
+            avatar_url=avatar_url,
+            bio=bio
+        )
+
+        if not success:
+            return jsonify({'success': False, 'message': msg, 'code': 'PROFILE_UPDATE_FAILED'}), 400
+
+        return jsonify({'success': True, 'message': '个人资料更新成功'}), 200
+
+    except Exception as e:
+        return jsonify({'success': False, 'message': '更新个人资料失败', 'code': 'PROFILE_UPDATE_FAILED', 'error': str(e)}), 500
 
 
 def _save_crawled_data(items):
@@ -1921,6 +1950,49 @@ def system_settings():
         }), 500
 
 
+@app.route('/api/system/settings/batch', methods=['GET'])
+@auth_service.login_required
+def system_settings_batch_get():
+    try:
+        rows = system_db.get_all_settings()
+        data = {}
+        for row in rows:
+            key = row['key']
+            val = row['value']
+            try:
+                parsed = json.loads(val)
+                data[key] = parsed
+            except (json.JSONDecodeError, TypeError):
+                data[key] = val
+        return jsonify({'success': True, 'data': data}), 200
+    except Exception as e:
+        return jsonify({
+            'success': False, 'message': '获取批量设置失败', 'code': 'SETTINGS_BATCH_FAILED', 'error': str(e)
+        }), 500
+
+
+@app.route('/api/system/settings/batch', methods=['PUT'])
+@auth_service.login_required
+def system_settings_batch_save():
+    try:
+        data = request.get_json()
+        if not isinstance(data, dict):
+            return jsonify({
+                'success': False, 'message': '请提供有效的设置数据', 'code': 'INVALID_SETTINGS'
+            }), 400
+
+        success, count = system_db.save_settings_batch(data)
+        if not success:
+            return jsonify({'success': False, 'message': '保存设置失败', 'error': count}), 500
+
+        return jsonify({'success': True, 'message': f'成功保存 {count} 项设置', 'data': {'count': count}}), 200
+
+    except Exception as e:
+        return jsonify({
+            'success': False, 'message': '保存批量设置失败', 'code': 'SETTINGS_BATCH_SAVE_FAILED', 'error': str(e)
+        }), 500
+
+
 @app.route('/api/system/settings/<key>', methods=['PUT'])
 @auth_service.login_required
 def system_setting_update(key):
@@ -1976,6 +2048,43 @@ def user_preferences_save():
     except Exception as e:
         return jsonify({
             'success': False, 'message': '保存偏好设置失败', 'code': 'PREFERENCES_SAVE_FAILED', 'error': str(e)
+        }), 500
+
+
+@app.route('/api/user/theme', methods=['GET'])
+@auth_service.login_required
+def user_theme_get():
+    try:
+        theme_name = system_db.get_theme(request.user_id)
+        return jsonify({'success': True, 'data': {'theme': theme_name}}), 200
+    except Exception as e:
+        return jsonify({
+            'success': False, 'message': '获取主题失败', 'code': 'THEME_GET_FAILED', 'error': str(e)
+        }), 500
+
+
+@app.route('/api/user/theme', methods=['PUT'])
+@auth_service.login_required
+def user_theme_save():
+    try:
+        data = request.get_json()
+        theme_name = data.get('theme', 'default')
+
+        valid_themes = ['default', 'space-gray', 'ice-blue', 'night-green', 'purple-gold', 'cyber-aurora', 'pure-black']
+        if theme_name not in valid_themes:
+            return jsonify({
+                'success': False, 'message': '无效的主题名称', 'code': 'INVALID_THEME'
+            }), 400
+
+        success, msg = system_db.save_theme(request.user_id, theme_name)
+        if not success:
+            return jsonify({'success': False, 'message': '保存主题失败', 'error': msg}), 500
+
+        return jsonify({'success': True, 'message': '主题已切换', 'data': {'theme': theme_name}}), 200
+
+    except Exception as e:
+        return jsonify({
+            'success': False, 'message': '保存主题失败', 'code': 'THEME_SAVE_FAILED', 'error': str(e)
         }), 500
 
 
