@@ -214,7 +214,7 @@
         </div>
         <p class="success-text">导出成功！</p>
         <p class="success-desc">文件已准备就绪，点击下方链接下载</p>
-        <a href="#" class="download-link" @click.prevent>
+        <a href="#" class="download-link" @click.prevent="triggerDownload">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
           下载 exported_data.{{ exportFormat }}
         </a>
@@ -227,7 +227,6 @@
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { dataAPI } from '../api/data'
-import api from '../api/index'
 import NavBar from '../components/NavBar.vue'
 
 const exportFormat = ref('csv')
@@ -305,14 +304,21 @@ async function doExport() {
   exporting.value = true
   exportSuccess.value = false
   try {
-    const exportUrl = api.defaults.baseURL + '/data/export?format=' + exportFormat.value + '&fields=' + selectedFields.value.join(',')
-    window.open(exportUrl)
+    const { downloadFile } = await import('../api/index')
+    const fields = selectedFields.value.join(',')
+    await downloadFile('/data/export?fields=' + fields, `exported_data.${exportFormat.value}`, exportFormat.value)
     exporting.value = false
     exportSuccess.value = true
     ElMessage.success('数据导出成功')
   } catch (error) {
     exporting.value = false
     ElMessage.error('导出失败，请重试')
+  }
+}
+
+function triggerDownload() {
+  if (exportSuccess.value) {
+    doExport()
   }
 }
 

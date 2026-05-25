@@ -172,14 +172,24 @@ class SystemDB:
             if conn:
                 conn.close()
 
-    def clear_logs(self):
+    def clear_logs(self, days=0):
         conn = None
         try:
             conn = pymysql.connect(**self._config)
             with conn.cursor() as cursor:
-                cursor.execute("TRUNCATE TABLE `system_logs`")
+                if days and days > 0:
+                    from datetime import datetime, timedelta
+                    cutoff = datetime.now() - timedelta(days=days)
+                    cursor.execute(
+                        "DELETE FROM `system_logs` WHERE `created_at` < %(cutoff)s",
+                        {"cutoff": cutoff.strftime("%Y-%m-%d %H:%M:%S")}
+                    )
+                    deleted = cursor.rowcount
+                else:
+                    cursor.execute("TRUNCATE TABLE `system_logs`")
+                    deleted = cursor.rowcount
             conn.commit()
-            return True, "所有日志已清空"
+            return True, f"已清理 {deleted} 条日志"
         except pymysql.Error as e:
             return False, str(e)
         finally:

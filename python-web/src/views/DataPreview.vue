@@ -160,7 +160,6 @@
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { dataAPI } from '../api/data'
-import api from '../api/index'
 import NavBar from '../components/NavBar.vue'
 
 const loading = ref(true)
@@ -266,9 +265,10 @@ function handleFilter() {
 async function handleExport(format) {
   showExportOptions.value = false
   try {
-    const exportUrl = api.defaults.baseURL + '/data/export?format=' + format
-    window.open(exportUrl)
-    ElMessage.success(`正在导出 ${format.toUpperCase()} 格式，共 ${totalFiltered.value} 条数据`)
+    const { downloadFile } = await import('../api/index')
+    const fields = columns.value.filter(c => c.visible).map(c => c.key).join(',')
+    await downloadFile('/data/export?fields=' + fields, `data_export.${format}`, format)
+    ElMessage.success(`导出 ${format.toUpperCase()} 成功`)
   } catch (error) {
     ElMessage.error('导出失败，请重试')
   }

@@ -1272,6 +1272,7 @@ def data_clean():
         data = request.get_json()
         items = data.get('data', [])
         operations = data.get('operations', [])
+        save_to_db = data.get('save_to_db', False)
 
         if not items or not isinstance(items, list):
             return jsonify({
@@ -1302,9 +1303,12 @@ def data_clean():
                     for item in cleaned
                 ]
 
+        if save_to_db:
+            crawler_db.replace_all(cleaned)
+
         return jsonify({
             'success': True,
-            'message': '数据清洗完成',
+            'message': '数据清洗完成' + ('并已保存到数据库' if save_to_db else ''),
             'data': {
                 'original_count': len(items),
                 'cleaned_count': len(cleaned),
@@ -1367,9 +1371,35 @@ def data_export():
             )
 
         elif export_format == 'excel':
-            return jsonify({
-                'success': False, 'message': 'Excel导出需要安装openpyxl库', 'code': 'EXCEL_NOT_SUPPORTED'
-            }), 400
+            try:
+                from openpyxl import Workbook
+                from io import BytesIO
+
+                wb = Workbook()
+                ws = wb.active
+                ws.title = '爬取数据'
+
+                if fields:
+                    ws.append(fields)
+                for item in items:
+                    ws.append([item.get(f, '') for f in fields])
+
+                output = BytesIO()
+                wb.save(output)
+                output.seek(0)
+
+                return Response(
+                    output.getvalue(),
+                    mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                    headers={
+                        'Content-Disposition': 'attachment; filename=data_export.xlsx',
+                        'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+                    }
+                )
+            except ImportError:
+                return jsonify({
+                    'success': False, 'message': 'Excel导出需要安装openpyxl库', 'code': 'EXCEL_NOT_SUPPORTED'
+                }), 400
 
         else:
             return jsonify({
@@ -1824,21 +1854,56 @@ def system_logs():
 @auth_service.login_required
 def system_logs_clear():
     try:
-        data = request.get_json()
+        data = request.get_json(silent=True) or {}
         days = data.get('days', 30)
 
-        if not isinstance(days, int) or days < 1:
+        if not isinstance(days, int) or days < 0:
             return jsonify({
-                'success': False, 'message': '请提供有效的天数（大于0的整数）', 'code': 'INVALID_DAYS'
+                'success': False, 'message': '请提供有效的天数（大于等于0的整数）', 'code': 'INVALID_DAYS'
             }), 400
 
-        system_db.clear_logs(days)
+        success, msg = system_db.clear_logs(days)
+        if not success:
+            return jsonify({'success': False, 'message': '清理日志失败', 'error': msg}), 500
 
-        return jsonify({'success': True, 'message': f'已清理 {days} 天前的日志'}), 200
+        return jsonify({'success': True, 'message': msg}), 200
 
     except Exception as e:
         return jsonify({
             'success': False, 'message': '清理日志失败', 'code': 'LOGS_CLEAR_FAILED', 'error': str(e)
+        }), 500
+
+
+@app.route('/api/system/logs/export', methods=['GET'])
+@auth_service.login_required
+def system_logs_export():
+    try:
+        logs, _ = system_db.get_logs(page=1, page_size=10000)
+
+        output = io.StringIO()
+        writer = csv.writer(output)
+        writer.writerow(['时间', '级别', '来源', '消息'])
+        for log in logs:
+            writer.writerow([
+                log.get('created_at', ''),
+                log.get('level', ''),
+                log.get('source', ''),
+                log.get('message', '')
+            ])
+        output.seek(0)
+
+        return Response(
+            output.getvalue().encode('utf-8-sig'),
+            mimetype='text/csv',
+            headers={
+                'Content-Disposition': 'attachment; filename=system_logs.csv',
+                'Content-Type': 'text/csv; charset=utf-8-sig'
+            }
+        )
+
+    except Exception as e:
+        return jsonify({
+            'success': False, 'message': '日志导出失败', 'code': 'LOGS_EXPORT_FAILED', 'error': str(e)
         }), 500
 
 

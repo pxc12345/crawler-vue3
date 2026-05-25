@@ -91,4 +91,27 @@ export const userAPI = {
   }
 }
 
+export function downloadFile(url, filename, format = 'csv') {
+  return api.get(url, {
+    responseType: 'blob',
+    params: { format }
+  }).then(response => {
+    const blob = response.data instanceof Blob ? response.data : new Blob([response.data])
+    const downloadUrl = window.URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = downloadUrl
+    const contentDisposition = response.headers['content-disposition']
+    if (contentDisposition) {
+      const match = contentDisposition.match(/filename="?(.+)"?/)
+      if (match) filename = match[1]
+    }
+    a.download = filename
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    window.URL.revokeObjectURL(downloadUrl)
+    return true
+  })
+}
+
 export default api

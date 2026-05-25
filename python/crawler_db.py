@@ -231,6 +231,37 @@ class CrawlerDB:
             if conn:
                 conn.close()
 
+    def replace_all(self, items):
+        conn = None
+        try:
+            conn = pymysql.connect(**self._config)
+            with conn.cursor() as cursor:
+                cursor.execute("TRUNCATE TABLE `crawler_data`")
+                sql = """
+                    INSERT INTO `crawler_data`
+                    (`title`, `link`, `image_url`, `content`, `source_url`, `page_number`, `type`, `task_id`)
+                    VALUES (%(title)s, %(link)s, %(image_url)s, %(content)s, %(source_url)s, %(page_number)s, %(type)s, %(task_id)s)
+                """
+                for item in items:
+                    cursor.execute(sql, {
+                        "title": item.get("title", ""),
+                        "link": item.get("link", ""),
+                        "image_url": item.get("image_url", ""),
+                        "content": item.get("content", ""),
+                        "source_url": item.get("source_url", ""),
+                        "page_number": item.get("page_number", 1),
+                        "type": item.get("type", "link"),
+                        "task_id": item.get("task_id"),
+                    })
+            conn.commit()
+            return True
+        except pymysql.Error as e:
+            print(f"批量替换数据失败: {e}")
+            return False
+        finally:
+            if conn:
+                conn.close()
+
     def get_count(self):
         """获取数据总条数"""
         conn = None

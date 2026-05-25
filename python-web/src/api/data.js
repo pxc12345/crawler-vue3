@@ -5,10 +5,6 @@ export const dataAPI = {
     return api.get('/data', { params })
   },
 
-  getDataDetail(id) {
-    return api.get(`/data/${id}`)
-  },
-
   cleanData(data) {
     return api.post('/data/clean', data)
   },
@@ -18,10 +14,10 @@ export const dataAPI = {
   },
 
   autoWriteConfig(data) {
-    return api.post('/data/auto-write/config', data)
+    return api.post('/data/auto-write-config', data)
   },
 
   pushConfig(data) {
-    return api.post('/data/push/config', data)
+    return api.post('/data/push-config', data)
   }
 }

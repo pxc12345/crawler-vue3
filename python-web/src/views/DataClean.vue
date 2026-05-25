@@ -233,15 +233,32 @@ async function runFormat() {
   }
 }
 
-function applyChanges() {
-  ElMessage.success('数据清洗结果已应用')
-  hasChanges.value = false
-  dedupResult.value = ''
-  nullFilterResult.value = ''
-  formatResult.value = ''
-  nullFilterField.value = ''
-  formatField.value = ''
-  formatType.value = ''
+async function applyChanges() {
+  processing.value = true
+  try {
+    const res = await dataAPI.cleanData({
+      operations: ['deduplicate', 'filter_empty'],
+      data: previewData.value,
+      save_to_db: true
+    })
+    if (res.data.success) {
+      rawData.value = previewData.value.map(r => ({ ...r }))
+      ElMessage.success('数据清洗结果已保存到数据库')
+      hasChanges.value = false
+      dedupResult.value = ''
+      nullFilterResult.value = ''
+      formatResult.value = ''
+      nullFilterField.value = ''
+      formatField.value = ''
+      formatType.value = ''
+    } else {
+      ElMessage.error(res.data.message || '保存失败')
+    }
+  } catch (error) {
+    ElMessage.error('应用更改失败')
+  } finally {
+    processing.value = false
+  }
 }
 
 function resetData() {

@@ -99,7 +99,6 @@
 import { ref, computed, onMounted, nextTick, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { systemAPI } from '../api/system'
-import api from '../api/index'
 import NavBar from '../components/NavBar.vue'
 
 const activeLevel = ref('ALL')
@@ -180,10 +179,14 @@ async function refreshLogs() {
   ElMessage.success('日志已刷新')
 }
 
-function exportLogs() {
-  const exportUrl = api.defaults.baseURL + '/system/logs/export'
-  window.open(exportUrl)
-  ElMessage.success('日志导出已开始')
+async function exportLogs() {
+  try {
+    const { downloadFile } = await import('../api/index')
+    await downloadFile('/system/logs/export', 'system_logs.csv', 'csv')
+    ElMessage.success('日志导出成功')
+  } catch (error) {
+    ElMessage.error('日志导出失败')
+  }
 }
 
 async function fetchLogs() {

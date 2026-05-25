@@ -5,8 +5,8 @@ export const systemAPI = {
     return api.get('/system/logs', { params })
   },
 
-  clearLogs(beforeDays) {
-    return api.delete('/system/logs', { data: { before_days: beforeDays } })
+  clearLogs(days) {
+    return api.post('/system/logs/clear', { days: days })
   },
 
   getResources() {
