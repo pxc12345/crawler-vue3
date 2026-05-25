@@ -324,17 +324,41 @@ def _save_crawled_data(items):
             engine_status = crawler_engine.get_status()
             execution_time = engine_status.get('elapsed_seconds', 0)
             data_count = engine_status.get('collected_count', 0)
-            # 成功率：完成任务即为100%
+            error_message = engine_status.get('error_message', '')
+            
+            # 成功率：完成任务即为100%，失败为0
             success_rate = 100.0 if status == 'COMPLETED' else 0.0
             
-            # 更新任务统计信息
-            task_db.update_task_stats(task_id, execution_time, data_count, success_rate)
+            # 更新任务统计信息（包含错误消息）
+            task_db.update_task_stats(task_id, execution_time, data_count, success_rate, error_message)
             # 更新任务状态
             task_db.update_task_status(task_id, status)
-            print(f"[Task] Task {task_id} completed: time={execution_time}s, data={data_count}, rate={success_rate}%")
+            
+            # 创建执行版本记录
+            task = task_db.get_by_id(task_id)
+            if task:
+                config = task.get('config', {})
+                if isinstance(config, str):
+                    try:
+                        import json
+                        config = json.loads(config)
+                    except:
+                        config = {}
+                # 添加执行结果到配置中
+                config['_last_execution'] = {
+                    'status': status,
+                    'execution_time': execution_time,
+                    'data_count': data_count,
+                    'success_rate': success_rate,
+                    'error_message': error_message
+                }
+                task_db.save_task_version(task_id, config, f'执行结果: {status}, 数据: {data_count}条')
+            
+            print(f"[Task] Task {task_id} completed: time={execution_time}s, data={data_count}, rate={success_rate}%, error={error_message[:50] if error_message else 'none'}")
         return
-    # 普通数据保存
-    return crawler_db.save_batch(items)
+    # 普通数据保存 - 从爬虫引擎获取当前 task_id
+    task_id = crawler_engine._task_id if hasattr(crawler_engine, '_task_id') else None
+    return crawler_db.save_batch(items, task_id=task_id)
 
 
 @app.route('/api/crawler/start', methods=['POST'])
@@ -624,18 +648,22 @@ def task_update(task_id):
 
         data = request.get_json()
         name = data.get('name')
-        task_type = data.get('task_type')
         config = data.get('config')
-        description = data.get('description')
-
-        task_db.update(
-            task_id=task_id,
-            name=name,
-            task_type=task_type,
-            config=config,
-            description=description,
-            user_id=request.user_id
-        )
+        
+        # 准备更新字段
+        update_fields = {}
+        if name:
+            update_fields['name'] = name
+        if config:
+            update_fields['config'] = config
+        
+        # 如果有更新字段则更新
+        if update_fields:
+            task_db.update(task_id=task_id, **update_fields)
+            
+            # 如果更新了配置，创建新版本记录
+            if config:
+                task_db.save_task_version(task_id, config, '更新任务配置')
 
         return jsonify({'success': True, 'message': '更新任务成功'}), 200
 
@@ -1107,6 +1135,71 @@ def alert_unread_count():
 
 # ==================== Data Management Routes ====================
 
+@app.route('/api/tasks/<task_id>/data-summary', methods=['GET'])
+@auth_service.login_required
+def task_data_summary(task_id):
+    """获取任务的数据概览统计"""
+    try:
+        task = task_db.get_by_id(task_id, user_id=request.user_id)
+        if not task:
+            return jsonify({'success': False, 'message': '任务不存在', 'code': 'TASK_NOT_FOUND'}), 404
+
+        conn = pymysql.connect(**{
+            'host': 'localhost', 'port': 3308, 'user': 'root',
+            'password': 'Pxc7890.', 'database': 'crawler_manager',
+            'charset': 'utf8mb4'
+        })
+        with conn.cursor() as cursor:
+            # 获取总数据量
+            cursor.execute(
+                "SELECT COUNT(*) AS total FROM `crawler_data` WHERE `task_id` = %(task_id)s",
+                {'task_id': task_id}
+            )
+            total_count = cursor.fetchone()["total"]
+
+            # 获取类型分布
+            cursor.execute(
+                "SELECT `type`, COUNT(*) AS cnt FROM `crawler_data` WHERE `task_id` = %(task_id)s GROUP BY `type`",
+                {'task_id': task_id}
+            )
+            type_distribution = {row['type']: row['cnt'] for row in cursor.fetchall()}
+
+            # 获取最近采集时间
+            cursor.execute(
+                "SELECT MAX(`collected_at`) AS last_time FROM `crawler_data` WHERE `task_id` = %(task_id)s",
+                {'task_id': task_id}
+            )
+            last_time = cursor.fetchone()["last_time"]
+            if last_time:
+                last_time = last_time.strftime('%Y-%m-%d %H:%M:%S')
+
+            # 获取今日数据量
+            cursor.execute(
+                "SELECT COUNT(*) AS today_count FROM `crawler_data` WHERE `task_id` = %(task_id)s AND DATE(`collected_at`) = CURDATE()",
+                {'task_id': task_id}
+            )
+            today_count = cursor.fetchone()["today_count"]
+
+        conn.close()
+
+        return jsonify({
+            'success': True,
+            'data': {
+                'task_id': task_id,
+                'task_name': task.get('name', ''),
+                'total_count': total_count,
+                'today_count': today_count,
+                'type_distribution': type_distribution,
+                'last_collected_at': last_time,
+                'data_count': task.get('data_count', 0),  # 任务表中的记录数
+                'execution_time': task.get('execution_time', 0),
+                'success_rate': task.get('success_rate', 0)
+            }
+        }), 200
+    except Exception as e:
+        return jsonify({'success': False, 'message': '获取数据概览失败', 'error': str(e)}), 500
+
+
 @app.route('/api/data', methods=['GET'])
 @auth_service.login_required
 def get_data_list():
@@ -1114,6 +1207,7 @@ def get_data_list():
         page = request.args.get('page', 1, type=int)
         page_size = request.args.get('page_size', 20, type=int)
         keyword = request.args.get('keyword', '', type=str)
+        task_id = request.args.get('task_id', '', type=str)
         sort_order = request.args.get('sort_order', 'desc', type=str)
 
         if page < 1:
@@ -1121,7 +1215,12 @@ def get_data_list():
         if page_size < 1 or page_size > 100:
             page_size = 20
 
-        rows, total = crawler_db.get_list(page=page, page_size=page_size, keyword=keyword)
+        rows, total = crawler_db.get_list(
+            page=page,
+            page_size=page_size,
+            keyword=keyword,
+            task_id=int(task_id) if task_id else None
+        )
 
         return jsonify({
             'success': True,
@@ -1689,16 +1788,18 @@ def system_resources():
 def system_logs():
     try:
         level = request.args.get('level', '', type=str)
+        task_id = request.args.get('task_id', '', type=str)
         page = request.args.get('page', 1, type=int)
-        page_size = request.args.get('page_size', 20, type=int)
+        page_size = request.args.get('page_size', 50, type=int)
 
         if page < 1:
             page = 1
         if page_size < 1 or page_size > 100:
-            page_size = 20
+            page_size = 50
 
         logs, total = system_db.get_logs(
             level=level,
+            task_id=int(task_id) if task_id else None,
             page=page,
             page_size=page_size
         )

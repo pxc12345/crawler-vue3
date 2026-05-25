@@ -49,6 +49,10 @@ export const taskAPI = {
     return api.get(`/tasks/${taskId}/versions`)
   },
 
+  getDataSummary(taskId) {
+    return api.get(`/tasks/${taskId}/data-summary`)
+  },
+
   rollbackVersion(taskId, versionId) {
     return api.post(`/tasks/${taskId}/versions/rollback`, { version_id: versionId })
   },

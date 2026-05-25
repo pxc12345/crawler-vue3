@@ -529,15 +529,16 @@ class TaskDB:
             if conn:
                 conn.close()
 
-    def update_task_stats(self, task_id, execution_time, data_count, success_rate):
+    def update_task_stats(self, task_id, execution_time, data_count, success_rate, error_message=''):
         conn = None
         try:
             conn = pymysql.connect(**self._config)
             with conn.cursor() as cursor:
                 cursor.execute(
                     "UPDATE `crawler_tasks` SET `execution_time` = %(execution_time)s, "
-                    "`data_count` = %(data_count)s, `success_rate` = %(success_rate)s WHERE `id` = %(task_id)s",
-                    {"execution_time": execution_time, "data_count": data_count, "success_rate": success_rate, "task_id": task_id}
+                    "`data_count` = %(data_count)s, `success_rate` = %(success_rate)s, "
+                    "`error_message` = %(error_message)s WHERE `id` = %(task_id)s",
+                    {"execution_time": execution_time, "data_count": data_count, "success_rate": success_rate, "error_message": error_message, "task_id": task_id}
                 )
             conn.commit()
             return True, None

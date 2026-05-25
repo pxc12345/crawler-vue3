@@ -96,20 +96,21 @@ class SystemDB:
     def connect(self):
         return self._ensure_table()
 
-    def add_log(self, level="INFO", source="", message=""):
+    def add_log(self, level="INFO", source="", message="", task_id=None):
         conn = None
         try:
             conn = pymysql.connect(**self._config)
             with conn.cursor() as cursor:
                 sql = """
                     INSERT INTO `system_logs`
-                    (`level`, `source`, `message`)
-                    VALUES (%(level)s, %(source)s, %(message)s)
+                    (`level`, `source`, `message`, `task_id`)
+                    VALUES (%(level)s, %(source)s, %(message)s, %(task_id)s)
                 """
                 cursor.execute(sql, {
                     "level": level,
                     "source": source,
                     "message": message,
+                    "task_id": task_id,
                 })
                 log_id = cursor.lastrowid
             conn.commit()
@@ -120,7 +121,7 @@ class SystemDB:
             if conn:
                 conn.close()
 
-    def get_logs(self, level="", source="", page=1, page_size=50, user_id=None):
+    def get_logs(self, level="", source="", task_id=None, page=1, page_size=50, user_id=None):
         conn = None
         try:
             conn = pymysql.connect(**self._config)
@@ -135,6 +136,10 @@ class SystemDB:
                 if source:
                     conditions.append("`source` = %(source)s")
                     params["source"] = source
+
+                if task_id:
+                    conditions.append("`task_id` = %(task_id)s")
+                    params["task_id"] = task_id
 
                 where = ""
                 if conditions:

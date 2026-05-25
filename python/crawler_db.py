@@ -93,10 +93,11 @@ class CrawlerDB:
         """
         return self._ensure_table()
 
-    def save_batch(self, items):
+    def save_batch(self, items, task_id=None):
         """
         批量保存爬取结果
         :param items: 爬取结果列表，每项包含 title, link, image_url, content, source_url, page_number, type
+        :param task_id: 任务ID（可选）
         :return: 实际保存的记录数
         """
         conn = None
@@ -106,8 +107,8 @@ class CrawlerDB:
             with conn.cursor() as cursor:
                 sql = """
                     INSERT INTO `crawler_data`
-                    (`title`, `link`, `image_url`, `content`, `source_url`, `page_number`, `type`)
-                    VALUES (%(title)s, %(link)s, %(image_url)s, %(content)s, %(source_url)s, %(page_number)s, %(type)s)
+                    (`title`, `link`, `image_url`, `content`, `source_url`, `page_number`, `type`, `task_id`)
+                    VALUES (%(title)s, %(link)s, %(image_url)s, %(content)s, %(source_url)s, %(page_number)s, %(type)s, %(task_id)s)
                 """
                 for item in items:
                     try:
@@ -125,6 +126,7 @@ class CrawlerDB:
                             "source_url": item.get("source_url", ""),
                             "page_number": item.get("page_number", 1),
                             "type": item_type,
+                            "task_id": task_id,
                         })
                         saved += 1
                     except pymysql.Error as e:
@@ -138,24 +140,33 @@ class CrawlerDB:
                 conn.close()
         return saved
 
-    def get_list(self, page=1, page_size=20, keyword=""):
+    def get_list(self, page=1, page_size=20, keyword="", task_id=None):
         """
         分页查询爬取数据
         :param page: 页码
         :param page_size: 每页条数
         :param keyword: 搜索关键词（模糊匹配标题和内容）
+        :param task_id: 任务ID（可选，用于过滤特定任务的数据）
         :return: (数据列表, 总条数)
         """
         conn = None
         try:
             conn = pymysql.connect(**self._config)
             with conn.cursor() as cursor:
+                conditions = []
+                params = {}
+
                 if keyword:
-                    where = "WHERE `title` LIKE %(keyword)s OR `content` LIKE %(keyword)s"
-                    params = {"keyword": "%{}%".format(keyword)}
-                else:
-                    where = ""
-                    params = {}
+                    conditions.append("(`title` LIKE %(keyword)s OR `content` LIKE %(keyword)s)")
+                    params["keyword"] = "%{}%".format(keyword)
+
+                if task_id:
+                    conditions.append("`task_id` = %(task_id)s")
+                    params["task_id"] = task_id
+
+                where = ""
+                if conditions:
+                    where = "WHERE " + " AND ".join(conditions)
 
                 count_sql = "SELECT COUNT(*) AS total FROM `crawler_data` {}".format(where)
                 cursor.execute(count_sql, params)

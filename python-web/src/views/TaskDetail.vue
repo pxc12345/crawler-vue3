@@ -154,21 +154,90 @@
         </div>
 
         <div v-if="activeTab === 'preview'" class="tab-panel preview-panel">
-          <div class="preview-placeholder">
-            <div class="preview-icon">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                <rect x="2" y="3" width="20" height="14" rx="2" ry="2"/>
-                <line x1="8" y1="21" x2="16" y2="21"/>
-                <line x1="12" y1="17" x2="12" y2="21"/>
+          <div v-if="dataSummaryLoading" class="loading-state">
+            <div class="spinner"></div>
+            <span>加载中...</span>
+          </div>
+          <div v-else-if="!dataSummary" class="empty-state">
+            <div class="empty-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                <path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/>
+                <polyline points="13 2 13 9 20 9"/>
               </svg>
             </div>
-            <p class="preview-text">查看数据预览请前往</p>
-            <button class="action-btn primary" @click="$router.push('/data-preview')">
-              数据预览页面
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>
-              </svg>
-            </button>
+            <p class="empty-text">暂无数据</p>
+            <p class="empty-desc">启动任务后将自动采集数据</p>
+          </div>
+          <div v-else class="data-overview">
+            <div class="overview-header">
+              <h3 class="overview-title">{{ dataSummary.task_name }}</h3>
+              <span class="overview-badge" :class="task.status">{{ statusLabel(task.status) }}</span>
+            </div>
+            <div class="stats-grid">
+              <div class="stat-card">
+                <div class="stat-icon blue">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
+                  </svg>
+                </div>
+                <div class="stat-info">
+                  <span class="stat-value">{{ dataSummary.total_count || dataSummary.data_count || 0 }}</span>
+                  <span class="stat-label">采集数据条数</span>
+                </div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-icon green">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+                    <line x1="16" y1="2" x2="16" y2="6"/>
+                    <line x1="8" y1="2" x2="8" y2="6"/>
+                    <line x1="3" y1="10" x2="21" y2="10"/>
+                  </svg>
+                </div>
+                <div class="stat-info">
+                  <span class="stat-value">{{ dataSummary.today_count || 0 }}</span>
+                  <span class="stat-label">今日采集</span>
+                </div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-icon yellow">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="10"/>
+                    <polyline points="12 6 12 12 16 14"/>
+                  </svg>
+                </div>
+                <div class="stat-info">
+                  <span class="stat-value">{{ formatDuration(dataSummary.execution_time) }}</span>
+                  <span class="stat-label">总执行时间</span>
+                </div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-icon purple">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+                  </svg>
+                </div>
+                <div class="stat-info">
+                  <span class="stat-value">{{ dataSummary.success_rate || 0 }}%</span>
+                  <span class="stat-label">成功率</span>
+                </div>
+              </div>
+            </div>
+            
+            <div v-if="dataSummary.type_distribution && Object.keys(dataSummary.type_distribution).length > 0" class="type-section">
+              <h4 class="section-title">数据类型分布</h4>
+              <div class="type-list">
+                <div v-for="(count, type) in dataSummary.type_distribution" :key="type" class="type-item">
+                  <span class="type-name">{{ type === 'link' ? '链接' : type === 'image' ? '图片' : type }}</span>
+                  <span class="type-count">{{ count }} 条</span>
+                </div>
+              </div>
+            </div>
+
+            <div v-if="dataSummary.last_collected_at" class="time-section">
+              <h4 class="section-title">最近采集时间</h4>
+              <span class="last-time">{{ dataSummary.last_collected_at }}</span>
+            </div>
           </div>
         </div>
       </div>
@@ -202,6 +271,13 @@ const tabs = [
 const statusLabelMap = { running: '运行中', pending: '待执行', completed: '已完成', failed: '失败' }
 function statusLabel(status) { return statusLabelMap[status] || status }
 
+function formatDuration(seconds) {
+  if (!seconds) return '0s'
+  if (seconds >= 3600) return `${Math.floor(seconds/3600)}h ${Math.floor((seconds%3600)/60)}m`
+  if (seconds >= 60) return `${Math.floor(seconds/60)}m ${seconds%60}s`
+  return `${seconds}s`
+}
+
 function minutesToCron(minutes) {
   if (!minutes || minutes < 1) return '*/30 * * * *'
   return `*/${minutes} * * * *`
@@ -232,13 +308,33 @@ function loadForm() {
   if (typeof config === 'string') {
     try { config = JSON.parse(config) } catch (e) { config = {} }
   }
+  
+  // 任务表字段（优先从任务表读取，其次从 config 读取）
   form.name = t.name || ''
   form.url = t.target_url || config.target_url || ''
-  form.intervalMinutes = cronToMinutes(t.cron_expr || config.cron)
-  form.concurrency = t.concurrency || config.concurrency || 0
-  form.interval = t.interval_seconds || config.interval_seconds || config.interval || 0
-  form.maxRetries = t.retry_count || config.maxRetries || 0
-  form.headers = typeof config.headers === 'object' ? JSON.stringify(config.headers) : (config.headers || '')
+  
+  // 处理执行周期（cron_expr 在 config 中，格式为 "*/30 * * * *"）
+  const cronExpr = config.cron_expr || t.cron_expr || ''
+  form.intervalMinutes = cronToMinutes(cronExpr)
+  
+  // 处理并发数（config 中是 concurrency）
+  form.concurrency = config.concurrency || t.concurrency || 0
+  
+  // 处理请求间隔（config 中是 interval_seconds）
+  form.interval = config.interval_seconds || config.interval || t.interval_seconds || 0
+  
+  // 处理最大重试次数（config 中是 maxRetries，表中是 retry_count）
+  form.maxRetries = config.maxRetries || t.retry_count || 0
+  
+  // 处理请求头
+  if (typeof config.headers === 'object') {
+    form.headers = JSON.stringify(config.headers)
+  } else if (typeof config.headers === 'string') {
+    form.headers = config.headers
+  } else {
+    form.headers = ''
+  }
+  
   formBackup.value = { ...form }
 }
 
@@ -284,6 +380,8 @@ async function saveConfig() {
 const executionRecords = ref([])
 const logs = ref([])
 const logsLoading = ref(false)
+const dataSummary = ref(null)
+const dataSummaryLoading = ref(false)
 
 async function fetchTask() {
   // 跳过无效的 task id
@@ -310,15 +408,43 @@ async function fetchVersions() {
     const res = await taskAPI.getVersions(route.params.id)
     if (res.data.success) {
       const versions = res.data.data || []
-      executionRecords.value = versions.map((v, index) => ({
-        id: v.id,
-        version: v.version_index || (versions.length - index),
-        status: 'completed',
-        duration: 'N/A',
-        dataCount: 0,
-        time: v.created_at || '',
-        changeLog: v.change_log || ''
-      }))
+      executionRecords.value = versions.map((v, index) => {
+        // 从配置中提取执行结果信息
+        let status = 'completed'
+        let duration = 'N/A'
+        let dataCount = 0
+        let errorInfo = ''
+        
+        try {
+          const config = typeof v.config === 'string' ? JSON.parse(v.config) : (v.config || {})
+          const lastExec = config._last_execution || {}
+          if (lastExec.status) {
+            status = lastExec.status.toLowerCase() === 'completed' ? 'completed' : 'failed'
+          }
+          if (lastExec.execution_time) {
+            const t = lastExec.execution_time
+            if (t >= 3600) {
+              duration = `${Math.floor(t/3600)}h ${Math.floor((t%3600)/60)}m`
+            } else if (t >= 60) {
+              duration = `${Math.floor(t/60)}m ${t%60}s`
+            } else {
+              duration = `${t}s`
+            }
+          }
+          dataCount = lastExec.data_count || 0
+          errorInfo = lastExec.error_message || ''
+        } catch (e) {}
+        
+        return {
+          id: v.id,
+          version: v.version_index || (versions.length - index),
+          status: status,
+          duration: duration,
+          dataCount: dataCount,
+          time: v.created_at || '',
+          changeLog: v.change_log || ''
+        }
+      })
     }
   } catch (e) {
     console.error('获取版本列表失败:', e)
@@ -328,7 +454,8 @@ async function fetchVersions() {
 async function refreshLogs() {
   logsLoading.value = true
   try {
-    const res = await systemAPI.getLogs({ source: 'crawler_task', limit: 200, page_size: 200 })
+    // 传递 task_id 参数过滤任务相关日志
+    const res = await systemAPI.getLogs({ task_id: route.params.id, limit: 200, page_size: 200 })
     if (res.data.success) {
       const logList = res.data.data?.list || []
       logs.value = logList.map(item => ({
@@ -342,6 +469,23 @@ async function refreshLogs() {
     console.error('获取日志失败:', e)
   } finally {
     logsLoading.value = false
+  }
+}
+
+async function fetchDataSummary() {
+  if (!route.params.id || route.params.id === 'new' || route.params.id === 'undefined') {
+    return
+  }
+  dataSummaryLoading.value = true
+  try {
+    const res = await taskAPI.getDataSummary(route.params.id)
+    if (res.data.success) {
+      dataSummary.value = res.data.data
+    }
+  } catch (e) {
+    console.error('获取数据概览失败:', e)
+  } finally {
+    dataSummaryLoading.value = false
   }
 }
 
@@ -359,6 +503,9 @@ watch(activeTab, (val) => {
         logViewerRef.value.scrollTop = logViewerRef.value.scrollHeight
       }
     })
+  }
+  if (val === 'preview') {
+    fetchDataSummary()
   }
 })
 </script>
@@ -847,18 +994,41 @@ watch(activeTab, (val) => {
 }
 
 .preview-panel {
-  text-align: center;
-  padding: 60px 20px;
+  padding: 24px;
 }
 
-.preview-placeholder {
+.loading-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 60px;
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.spinner {
+  width: 32px;
+  height: 32px;
+  border: 3px solid rgba(255, 255, 255, 0.1);
+  border-top-color: #4c6ef5;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.empty-state {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 16px;
+  padding: 80px 20px;
 }
 
-.preview-icon {
+.empty-icon {
   width: 72px;
   height: 72px;
   border-radius: 18px;
@@ -869,11 +1039,151 @@ watch(activeTab, (val) => {
   color: rgba(255, 255, 255, 0.15);
 }
 
-.preview-icon svg { width: 32px; height: 32px; }
+.empty-icon svg { width: 32px; height: 32px; }
 
-.preview-text {
+.empty-text {
+  font-size: 16px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.35);
+}
+
+.empty-desc {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.2);
+}
+
+.data-overview {
+  max-width: 800px;
+  margin: 0 auto;
+}
+
+.overview-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 24px;
+}
+
+.overview-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.overview-badge {
+  display: inline-block;
+  padding: 4px 12px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.overview-badge.running { background: rgba(16, 185, 129, 0.12); color: #34d399; }
+.overview-badge.pending { background: rgba(76, 110, 245, 0.12); color: #7c8aff; }
+.overview-badge.completed { background: rgba(255, 255, 255, 0.05); color: rgba(255, 255, 255, 0.4); }
+.overview-badge.failed, .overview-badge.error { background: rgba(239, 68, 68, 0.12); color: #f87171; }
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.stat-card {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 20px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 12px;
+}
+
+.stat-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.stat-icon.blue { background: rgba(76, 110, 245, 0.15); color: #7c8aff; }
+.stat-icon.green { background: rgba(16, 185, 129, 0.15); color: #34d399; }
+.stat-icon.yellow { background: rgba(251, 191, 36, 0.15); color: #fbbf24; }
+.stat-icon.purple { background: rgba(124, 58, 237, 0.15); color: #a78bfa; }
+
+.stat-icon svg { width: 24px; height: 24px; }
+
+.stat-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.stat-value {
+  font-size: 24px;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.stat-label {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.35);
+}
+
+.section-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.5);
+  margin-bottom: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.type-section, .time-section {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 12px;
+  padding: 20px;
+  margin-bottom: 16px;
+}
+
+.type-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.type-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 8px;
+}
+
+.type-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.type-count {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.last-time {
   font-size: 14px;
-  color: rgba(255, 255, 255, 0.3);
+  font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+@media (max-width: 768px) {
+  .stats-grid { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 768px) {
@@ -881,6 +1191,6 @@ watch(activeTab, (val) => {
   .detail-title { font-size: 20px; }
   .form-row { grid-template-columns: 1fr; }
   .tab-nav { overflow-x: auto; }
-  .tab-btn { flex: none; }
+  .preview-panel { padding: 16px; }
 }
 </style>
