@@ -97,6 +97,10 @@ class SystemDB:
                     COMMENT='用户主题偏好表'
                 """)
 
+                cursor.execute("SHOW COLUMNS FROM `system_logs` LIKE 'task_id'")
+                if not cursor.fetchone():
+                    cursor.execute("ALTER TABLE `system_logs` ADD COLUMN `task_id` INT DEFAULT NULL COMMENT '关联任务ID' AFTER `message`")
+
             conn.commit()
             conn.close()
             return True

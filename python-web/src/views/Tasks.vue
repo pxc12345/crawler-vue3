@@ -76,7 +76,7 @@
           v-for="task in paginatedTasks"
           :key="task.id"
           class="task-card"
-          @click="$router.push(`/tasks/${task.id}`)"
+          @click="openTaskDetail(task)"
         >
           <div class="task-card-top">
             <div class="task-card-left">
@@ -119,10 +119,10 @@
           <div class="task-card-progress">
             <div class="progress-header">
               <span class="progress-label">成功率</span>
-              <span class="progress-value" :class="task.status === 'completed' ? 'high' : task.status === 'error' ? 'low' : getRealtimeSuccessRate(task) >= 90 ? 'high' : getRealtimeSuccessRate(task) >= 60 ? 'mid' : 'low'">{{ getRealtimeSuccessRate(task) }}%</span>
+              <span class="progress-value" :class="task.status === 'completed' ? 'high' : task.status === 'failed' ? 'low' : getRealtimeSuccessRate(task) >= 90 ? 'high' : getRealtimeSuccessRate(task) >= 60 ? 'mid' : 'low'">{{ getRealtimeSuccessRate(task) }}%</span>
             </div>
             <div class="progress-bar">
-              <div class="progress-fill" :class="task.status === 'completed' ? 'high' : task.status === 'error' ? 'low' : getRealtimeSuccessRate(task) >= 90 ? 'high' : getRealtimeSuccessRate(task) >= 60 ? 'mid' : 'low'" :style="{ width: getRealtimeSuccessRate(task) + '%' }"></div>
+              <div class="progress-fill" :class="task.status === 'completed' ? 'high' : task.status === 'failed' ? 'low' : getRealtimeSuccessRate(task) >= 90 ? 'high' : getRealtimeSuccessRate(task) >= 60 ? 'mid' : 'low'" :style="{ width: getRealtimeSuccessRate(task) + '%' }"></div>
             </div>
             <!-- 错误信息提示 -->
             <div v-if="task.status === 'error' && task._errorMessage" class="error-tip">
@@ -150,7 +150,7 @@
               </svg>
               {{ task.status === 'running' ? '停止' : '启动' }}
             </button>
-            <button class="task-btn btn-edit" @click="$router.push(`/tasks/${task.id}`)">
+            <button class="task-btn btn-edit" @click="openTaskEdit(task)">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
                 <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
@@ -187,11 +187,13 @@
 
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import NavBar from '../components/NavBar.vue'
 import { taskAPI } from '../api/task'
 import { crawlerAPI } from '../api/crawler'
 
+const router = useRouter()
 const loading = ref(true)
 const tasks = ref([])
 const total = ref(0)
@@ -200,6 +202,7 @@ const activeStatus = ref('all')
 const currentPage = ref(1)
 const pageSize = 10
 let updateTimer = null
+const tick = ref(0)
 
 // 记录每个任务开始时的时间戳（用于前端计时）
 const taskStartTimes = ref({})
@@ -257,13 +260,46 @@ async function toggleFavorite(task) {
   }
 }
 
+function openTaskDetail(task) {
+  router.push({ path: `/tasks/${task.id}` })
+}
+
+function openTaskEdit(task) {
+  router.push({ path: `/tasks/${task.id}`, query: { edit: '1' } })
+}
+
+function applyRunningState(task) {
+  task.status = 'running'
+  task._startTime = Date.now()
+  task._dataCount = 0
+  task._currentPage = 0
+  task._succeededPages = 0
+  task._totalPages = task._totalPages || 1
+  taskStartTimes.value[task.id] = task._startTime
+}
+
+async function syncTaskFromServer(taskId) {
+  try {
+    const res = await taskAPI.getTask(taskId)
+    if (res.data.success) {
+      const idx = tasks.value.findIndex(t => String(t.id) === String(taskId))
+      if (idx >= 0) {
+        tasks.value[idx] = mapTaskFromApi(res.data.data)
+      }
+    }
+  } catch (e) {
+    console.error('同步任务状态失败:', e)
+  }
+}
+
 async function toggleTaskStatus(task) {
   try {
     let res
     if (task.status === 'running') {
       res = await taskAPI.stopTask(task.id)
       if (res.data.success) {
-        task.status = 'pending'
+        delete taskStartTimes.value[task.id]
+        await syncTaskFromServer(task.id)
         ElMessage.success('任务已停止')
       } else {
         ElMessage.error(res.data.message)
@@ -271,10 +307,12 @@ async function toggleTaskStatus(task) {
     } else {
       res = await taskAPI.startTask(task.id)
       if (res.data.success) {
-        task.status = 'running'
+        applyRunningState(task)
         ElMessage.success('任务已启动')
+        await syncTaskFromServer(task.id)
       } else {
         ElMessage.error(res.data.message)
+        await syncTaskFromServer(task.id)
       }
     }
   } catch (e) {
@@ -304,10 +342,19 @@ async function deleteTask(task) {
   }
 }
 
+function normalizeStatus(status) {
+  const s = (status || 'pending').toLowerCase()
+  if (s === 'error') return 'failed'
+  return s
+}
+
 function mapTaskFromApi(item) {
   const crawlerStatus = item.crawler_status || {}
+  const engineMatches = crawlerStatus.task_id != null
+    && String(crawlerStatus.task_id) === String(item.id)
+  const liveStatus = engineMatches ? crawlerStatus : {}
   // 处理时间：优先使用实时 elapsed_seconds
-  const elapsed = crawlerStatus.elapsed_seconds || item.execution_time || 0
+  const elapsed = liveStatus.elapsed_seconds || item.execution_time || 0
   const hours = Math.floor(elapsed / 3600)
   const minutes = Math.floor((elapsed % 3600) / 60)
   const seconds = elapsed % 60
@@ -320,16 +367,12 @@ function mapTaskFromApi(item) {
     executionTime = `${seconds}s`
   }
 
-  // 计算成功率：优先使用数据库值
-  // 注意：success_rate 可能是字符串 "0.00" 或数字 0
-  let successRate = parseFloat(item.success_rate) || 0
-  if (successRate === 0 && item.status === 'completed') {
-    successRate = 100
-  }
+  // 成功率以数据库统计为准
+  let successRate = parseFloat(item.success_rate)
+  if (Number.isNaN(successRate)) successRate = 0
 
-  // 处理错误状态
-  const taskStatus = (item.status || 'pending').toLowerCase()
-  const errorMessage = item.error_message || crawlerStatus.error_message || ''
+  const taskStatus = normalizeStatus(item.status)
+  const errorMessage = item.error_message || liveStatus.error_message || ''
 
   // 记录任务开始时间（如果任务正在运行）
   if (taskStatus === 'running' && !taskStartTimes.value[item.id]) {
@@ -345,20 +388,22 @@ function mapTaskFromApi(item) {
     status: taskStatus,
     _executionTime: elapsed,
     _startTime: taskStartTimes.value[item.id],
-    _dataCount: item.data_count || crawlerStatus.collected_count || 0,
-    _currentPage: crawlerStatus.current_page || 0,
-    _totalPages: crawlerStatus.total_pages || 1,
+    _dataCount: item.data_count || liveStatus.collected_count || 0,
+    _currentPage: liveStatus.current_page || 0,
+    _totalPages: liveStatus.total_pages || item.config?.total_pages || 1,
+    _succeededPages: liveStatus.succeeded_pages || 0,
     _errorMessage: errorMessage,
     executionTime: executionTime,
-    dataCount: item.data_count || crawlerStatus.collected_count || 0,
+    dataCount: item.data_count || liveStatus.collected_count || 0,
     successRate: successRate,
     favorite: item.is_favorite === 1 || item.is_favorite === true || item.favorite === true,
     is_favorite: item.is_favorite === 1 || item.is_favorite === true || item.favorite === true
   }
 }
 
-// 计算实时执行时间
+// 计算实时执行时间（依赖 tick 触发每秒重算）
 function getRealtimeExecutionTime(task) {
+  void tick.value
   if (task.status === 'running' && task._startTime) {
     const elapsed = Math.floor((Date.now() - task._startTime) / 1000)
     const hours = Math.floor(elapsed / 3600)
@@ -373,34 +418,28 @@ function getRealtimeExecutionTime(task) {
 
 // 计算实时数据量
 function getRealtimeDataCount(task) {
+  void tick.value
   if (task.status === 'running') {
-    return task._dataCount
+    return task._dataCount ?? 0
   }
-  return task.dataCount
+  return task.dataCount ?? 0
 }
 
-// 计算实时成功率（爬取进度）
+// 计算实时成功率（基于成功采集页数 / 总页数）
 function getRealtimeSuccessRate(task) {
-  // 如果任务已完成，使用实际成功率
-  if (task.status === 'completed') return Math.round(task.successRate) || 100
-  // 如果任务失败（ERROR状态），显示0%或实际成功率
-  if (task.status === 'error') return Math.round(task.successRate) || 0
-  // 如果任务不是运行中，使用数据库中的成功率
-  if (task.status !== 'running') return Math.round(task.successRate) || 0
-  // 运行中状态：根据当前页数和总页数计算进度
-  const totalPages = task._totalPages || 1
-  const currentPage = task._currentPage || 0
-  if (totalPages > 0 && currentPage > 0) {
-    // 进度 = 已完成页数 / 总页数 * 100，最大99%（因为还在进行中）
-    return Math.min(99, Math.round((currentPage / totalPages) * 100))
+  void tick.value
+  if (task.status === 'completed') {
+    return Math.round(task.successRate ?? 0)
   }
-  // 如果没有页数信息，根据数据量估算，最大99%
-  const dataCount = task._dataCount || 0
-  if (dataCount > 0) {
-    return Math.min(99, Math.min(100, Math.round(dataCount / 2)))
+  if (task.status === 'failed') {
+    return Math.round(task.successRate ?? 0)
   }
-  // 任务刚开始，没有任何数据，返回0
-  return 0
+  if (task.status !== 'running') {
+    return Math.round(task.successRate ?? 0)
+  }
+  const totalPages = Math.max(1, task._totalPages || 1)
+  const succeededPages = task._succeededPages || 0
+  return Math.round((succeededPages / totalPages) * 100)
 }
 
 async function fetchTasks() {
@@ -441,22 +480,29 @@ onMounted(() => {
   updateTimer = setInterval(() => {
     const hasRunningTasks = tasks.value.some(t => t.status === 'running')
     if (hasRunningTasks) {
-      // 刷新爬虫引擎状态
+      tick.value += 1
       crawlerAPI.getStatus().then(res => {
         if (res.data.success) {
           const engineStatus = res.data.data
+          const engineTaskId = engineStatus.task_id
+          let shouldRefreshList = false
           tasks.value.forEach(task => {
-            if (task.status === 'running') {
-              // 更新实时数据量
-              task._dataCount = engineStatus.collected_count
-              // 如果引擎已完成，更新任务状态
-              if (engineStatus.status === 'completed' || engineStatus.status === 'idle') {
-                task.status = engineStatus.status === 'completed' ? 'completed' : 'pending'
-                task.successRate = 100
-                task.dataCount = engineStatus.collected_count
+            if (task.status === 'running' && engineTaskId && String(engineTaskId) === String(task.id)) {
+              task._dataCount = engineStatus.collected_count || 0
+              task._currentPage = engineStatus.current_page || 0
+              task._totalPages = engineStatus.total_pages || task._totalPages || 1
+              task._succeededPages = engineStatus.succeeded_pages || 0
+              if (engineStatus.elapsed_seconds != null) {
+                task._executionTime = engineStatus.elapsed_seconds
+              }
+              if (['completed', 'idle', 'error', 'stopped'].includes(engineStatus.status)) {
+                shouldRefreshList = true
               }
             }
           })
+          if (shouldRefreshList) {
+            fetchTasks()
+          }
         }
       }).catch(() => {})
     }

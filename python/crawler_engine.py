@@ -60,6 +60,7 @@ class CrawlerEngine:
         self._start_time = None
         self._elapsed_seconds = 0
         self._error_message = ""
+        self._succeeded_pages = 0
         self._db_callback = None
         self._crawl_mode = self.CRAWL_MODE_LINK  # 默认只爬取链接
 
@@ -409,9 +410,23 @@ class CrawlerEngine:
         self._start_time = time.time()
         self._elapsed_seconds = 0
         self._error_message = ""
+        self._succeeded_pages = 0
         self._db_callback = db_callback
 
+        def _emit_log(level, message):
+            if db_callback and self._task_id:
+                try:
+                    db_callback({
+                        'type': 'log',
+                        'task_id': self._task_id,
+                        'level': level,
+                        'message': message,
+                    })
+                except Exception:
+                    pass
+
         session = requests.Session()
+        _emit_log('INFO', f'任务[{self._task_id}] 开始爬取: {target_url[:120]}, 共{total_pages}页, 间隔{interval_seconds}s')
 
         try:
             for page in range(1, total_pages + 1):
@@ -428,6 +443,7 @@ class CrawlerEngine:
                     self._error_message = f"第{page}页请求失败: {str(e)}"
                     self._status = "error"
                     self._elapsed_seconds = int(time.time() - self._start_time)
+                    _emit_log('ERROR', self._error_message)
                     return
 
                 try:
@@ -436,6 +452,7 @@ class CrawlerEngine:
                     self._error_message = f"第{page}页解析失败: {str(e)}"
                     self._status = "error"
                     self._elapsed_seconds = int(time.time() - self._start_time)
+                    _emit_log('ERROR', self._error_message)
                     return
 
                 if items and db_callback:
@@ -444,11 +461,15 @@ class CrawlerEngine:
                     try:
                         saved_count = db_callback(items)
                         self._collected_count += saved_count
+                        self._succeeded_pages += 1
                     except Exception as e:
                         self._error_message = f"第{page}页数据保存失败: {str(e)}"
                         self._status = "error"
                         self._elapsed_seconds = int(time.time() - self._start_time)
+                        _emit_log('ERROR', self._error_message)
                         return
+                elif not items:
+                    _emit_log('WARNING', f'任务[{self._task_id}] 第{page}页未解析到数据')
 
                 if page < total_pages and not self._stop_flag.is_set():
                     time.sleep(max(interval_seconds, 1))
@@ -456,12 +477,12 @@ class CrawlerEngine:
         except Exception as e:
             self._error_message = f"爬取过程异常: {str(e)}"
             self._status = "error"
+            _emit_log('ERROR', self._error_message)
         finally:
             session.close()
             if self._status == "running":
                 self._status = "completed"
             self._elapsed_seconds = int(time.time() - self._start_time)
-            self._current_page = total_pages
             # 完成任务后更新数据库状态
             if self._task_id and db_callback:
                 try:
@@ -525,6 +546,8 @@ class CrawlerEngine:
             "total_pages": self._total_pages,
             "elapsed_seconds": self.elapsed_seconds,
             "error_message": self._error_message,
+            "task_id": self._task_id,
+            "succeeded_pages": self._succeeded_pages,
         }
 
     def reset(self):
@@ -538,6 +561,7 @@ class CrawlerEngine:
         self._start_time = None
         self._elapsed_seconds = 0
         self._error_message = ""
+        self._succeeded_pages = 0
         return True, "爬虫状态已重置"
 
 

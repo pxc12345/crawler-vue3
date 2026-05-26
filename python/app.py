@@ -14,6 +14,7 @@ import csv
 import io
 import json
 import psutil
+import pymysql
 
 app = Flask(__name__)
 
@@ -348,6 +349,8 @@ def _save_crawled_data(items):
     if isinstance(items, dict) and items.get('type') == 'complete':
         task_id = items.get('task_id')
         status = items.get('status', 'completed').upper()
+        if status == 'ERROR':
+            status = 'FAILED'
         if task_id:
             # 获取爬虫引擎的最终状态
             engine_status = crawler_engine.get_status()
@@ -355,8 +358,10 @@ def _save_crawled_data(items):
             data_count = engine_status.get('collected_count', 0)
             error_message = engine_status.get('error_message', '')
             
-            # 成功率：完成任务即为100%，失败为0
-            success_rate = 100.0 if status == 'COMPLETED' else 0.0
+            # 成功率：基于成功爬取的页数 / 总页数
+            total_pages = engine_status.get('total_pages', 1)
+            succeeded_pages = engine_status.get('succeeded_pages', 0)
+            success_rate = min(100.0, round((succeeded_pages / max(1, total_pages)) * 100, 2))
             
             # 更新任务统计信息（包含错误消息）
             task_db.update_task_stats(task_id, execution_time, data_count, success_rate, error_message)
@@ -382,12 +387,49 @@ def _save_crawled_data(items):
                     'error_message': error_message
                 }
                 task_db.save_task_version(task_id, config, f'执行结果: {status}, 数据: {data_count}条')
-            
+
+                if status == 'COMPLETED':
+                    system_db.add_log(level='INFO', source='crawler',
+                        message=f'任务[{task_id}] 执行完成: 耗时{execution_time}s, 采集{data_count}条数据, 成功率{success_rate}%',
+                        task_id=task_id)
+                elif status in ('ERROR', 'FAILED'):
+                    system_db.add_log(level='ERROR', source='crawler',
+                        message=f'任务[{task_id}] 执行失败: {error_message[:200] if error_message else "未知错误"}',
+                        task_id=task_id)
+                elif status == 'STOPPED':
+                    system_db.add_log(level='WARNING', source='crawler',
+                        message=f'任务[{task_id}] 手动停止: 耗时{execution_time}s, 已采集{data_count}条',
+                        task_id=task_id)
+                else:
+                    system_db.add_log(level='INFO', source='crawler',
+                        message=f'任务[{task_id}] 状态更新: {status}, 耗时{execution_time}s, 数据{data_count}条',
+                        task_id=task_id)
+
             print(f"[Task] Task {task_id} completed: time={execution_time}s, data={data_count}, rate={success_rate}%, error={error_message[:50] if error_message else 'none'}")
         return
+    # 执行过程日志（由爬虫引擎推送）
+    if isinstance(items, dict) and items.get('type') == 'log':
+        task_id = items.get('task_id')
+        if task_id:
+            system_db.add_log(
+                level=items.get('level', 'INFO'),
+                source='crawler',
+                message=items.get('message', ''),
+                task_id=task_id
+            )
+        return 0
+
     # 普通数据保存 - 从爬虫引擎获取当前 task_id
     task_id = crawler_engine._task_id if hasattr(crawler_engine, '_task_id') else None
-    return crawler_db.save_batch(items, task_id=task_id)
+    saved_count = crawler_db.save_batch(items, task_id=task_id)
+    if task_id and isinstance(items, list) and items:
+        page_no = items[0].get('page_number', '?')
+        system_db.add_log(
+            level='INFO', source='crawler',
+            message=f'任务[{task_id}] 第{page_no}页完成: 解析{len(items)}条, 入库{saved_count}条',
+            task_id=task_id
+        )
+    return saved_count
 
 
 @app.route('/api/crawler/start', methods=['POST'])
@@ -581,10 +623,14 @@ def task_list():
             page_size=page_size
         )
 
-        # 合并爬虫引擎的实时状态
+        # 仅对当前引擎正在执行的任务附加实时状态
         engine_status = crawler_engine.get_status()
+        engine_task_id = engine_status.get('task_id')
         for task in tasks:
-            task['crawler_status'] = engine_status
+            if engine_task_id and str(task.get('id')) == str(engine_task_id):
+                task['crawler_status'] = engine_status
+            else:
+                task['crawler_status'] = {}
 
         return jsonify({
             'success': True,
@@ -740,7 +786,7 @@ def task_start(task_id):
                 config = {}
         target_url = (config.get('target_url') or task.get('target_url') or '').strip()
 
-        start_result = crawler_engine.start(
+        result = crawler_engine.start(
             target_url,
             config.get('total_pages', 1),
             config.get('interval_seconds', 3),
@@ -749,13 +795,30 @@ def task_start(task_id):
             task_id=task_id
         )
 
-        if not start_result:
+        if isinstance(result, tuple):
+            start_ok = result[0]
+        else:
+            start_ok = result
+        if not start_ok:
+            err_msg = result[1] if isinstance(result, tuple) and len(result) > 1 else '启动爬虫失败'
+            system_db.add_log(
+                level='ERROR', source='crawler',
+                message=f'任务[{task_id}] 启动失败: {err_msg}',
+                task_id=int(task_id) if str(task_id).isdigit() else task_id
+            )
             return jsonify({
-                'success': False, 'message': '启动爬虫失败',
+                'success': False, 'message': err_msg or '启动爬虫失败',
                 'code': 'CRAWLER_START_FAILED'
             }), 400
 
         success, message = task_db.start_task(task_id, user_id=request.user_id)
+
+        if success:
+            system_db.add_log(
+                level='INFO', source='crawler',
+                message=f'任务[{task_id}] 开始执行: 目标={target_url[:100]}, 页数={config.get("total_pages", 1) if isinstance(config, dict) else 1}',
+                task_id=task_id
+            )
 
         return jsonify({'success': success, 'message': message}), 200 if success else 400
 
@@ -1176,7 +1239,8 @@ def task_data_summary(task_id):
         conn = pymysql.connect(**{
             'host': 'localhost', 'port': 3308, 'user': 'root',
             'password': 'Pxc7890.', 'database': 'crawler_manager',
-            'charset': 'utf8mb4'
+            'charset': 'utf8mb4',
+            'cursorclass': pymysql.cursors.DictCursor
         })
         with conn.cursor() as cursor:
             # 获取总数据量
@@ -1608,11 +1672,14 @@ def proxy_group_create():
                 'success': False, 'message': '请输入组名称', 'code': 'MISSING_NAME'
             }), 400
 
-        group_id = proxy_db.create_proxy_group(
-            user_id=request.user_id,
+        group_id, err = proxy_db.create_proxy_group(
             name=name,
             description=description
         )
+        if err:
+            return jsonify({
+                'success': False, 'message': f'创建代理组失败: {err}', 'code': 'PROXY_GROUP_CREATE_FAILED'
+            }), 500
 
         return jsonify({
             'success': True, 'message': '创建代理组成功', 'data': {'group_id': group_id}
@@ -1637,7 +1704,7 @@ def proxy_group_assign():
                 'success': False, 'message': '请提供代理ID和组ID', 'code': 'MISSING_PARAMS'
             }), 400
 
-        proxy_db.assign_proxy_to_group(proxy_id, group_id)
+        proxy_db.assign_proxy_to_group(group_id, proxy_id)
 
         return jsonify({'success': True, 'message': '代理分配成功'}), 200
 
@@ -1674,14 +1741,18 @@ def proxy_blacklist_add():
                 'success': False, 'message': '请输入黑名单目标', 'code': 'MISSING_TARGET'
             }), 400
 
-        item_id = proxy_db.add_blacklist(
-            user_id=request.user_id,
-            target=target,
+        success, _ = proxy_db.add_blacklist(
+            url=target,
             reason=reason
         )
 
+        if not success:
+            return jsonify({
+                'success': False, 'message': '添加黑名单失败', 'code': 'BLACKLIST_ADD_FAILED'
+            }), 500
+
         return jsonify({
-            'success': True, 'message': '已加入黑名单', 'data': {'item_id': item_id}
+            'success': True, 'message': '已加入黑名单'
         }), 201
 
     except Exception as e:

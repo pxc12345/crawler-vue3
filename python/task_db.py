@@ -110,6 +110,19 @@ class TaskDB:
                     COMMENT='任务收藏表'
                 """)
 
+                for col_def in [
+                    ("execution_time", "DECIMAL(10,2) DEFAULT NULL COMMENT '执行耗时(秒)'"),
+                    ("data_count", "INT DEFAULT 0 COMMENT '采集数据条数'"),
+                    ("success_rate", "DECIMAL(5,2) DEFAULT NULL COMMENT '成功率(%)'"),
+                    ("error_message", "TEXT COMMENT '错误信息'"),
+                ]:
+                    col_name = col_def[0]
+                    cursor.execute("SHOW COLUMNS FROM `crawler_tasks` LIKE %(col)s", {"col": col_name})
+                    if not cursor.fetchone():
+                        cursor.execute(
+                            "ALTER TABLE `crawler_tasks` ADD COLUMN `{}` {}".format(col_name, col_def[1])
+                        )
+
             conn.commit()
             conn.close()
             return True
@@ -119,6 +132,24 @@ class TaskDB:
 
     def connect(self):
         return self._ensure_table()
+
+    def _normalize_task_row(self, row):
+        """解析 config JSON 并统一状态字段"""
+        if not row:
+            return row
+        config = row.get("config")
+        if isinstance(config, str) and config.strip():
+            try:
+                row["config"] = json.loads(config)
+            except (json.JSONDecodeError, TypeError):
+                row["config"] = {}
+        elif not isinstance(config, dict):
+            row["config"] = {}
+        status = (row.get("status") or "PENDING").upper()
+        if status == "ERROR":
+            status = "FAILED"
+        row["status"] = status
+        return row
 
     def get_task_list(self, page=1, page_size=20, keyword="", status=""):
         conn = None
@@ -160,6 +191,7 @@ class TaskDB:
                         row["created_at"] = row["created_at"].strftime("%Y-%m-%d %H:%M:%S")
                     if row.get("updated_at"):
                         row["updated_at"] = row["updated_at"].strftime("%Y-%m-%d %H:%M:%S")
+                    self._normalize_task_row(row)
 
                 return rows, total
         except pymysql.Error as e:
@@ -273,6 +305,7 @@ class TaskDB:
                         row["created_at"] = row["created_at"].strftime("%Y-%m-%d %H:%M:%S")
                     if row.get("updated_at"):
                         row["updated_at"] = row["updated_at"].strftime("%Y-%m-%d %H:%M:%S")
+                    self._normalize_task_row(row)
                 return row
         except pymysql.Error as e:
             print(f"查询任务失败: {e}")
@@ -627,6 +660,7 @@ class TaskDB:
                         row["created_at"] = row["created_at"].strftime("%Y-%m-%d %H:%M:%S")
                     if row.get("updated_at"):
                         row["updated_at"] = row["updated_at"].strftime("%Y-%m-%d %H:%M:%S")
+                    self._normalize_task_row(row)
 
                 return rows, total
         except pymysql.Error as e:

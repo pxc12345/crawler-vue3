@@ -1,4 +1,5 @@
 import pymysql
+import json
 import os
 from datetime import datetime
 
@@ -353,7 +354,6 @@ class AlertDB:
                 conn.close()
 
     def create_rule(self, user_id=0, name="", rule_type="", condition=None, actions=None, is_enabled=True):
-        import json
         threshold = 0
         if isinstance(condition, dict):
             threshold = condition.get("threshold", 0)
@@ -373,6 +373,10 @@ class AlertDB:
             kwargs["enabled"] = 1 if kwargs.pop("is_enabled") else 0
         if "rule_type" in kwargs:
             kwargs["type"] = kwargs.pop("rule_type")
+        condition = kwargs.pop("condition", None)
+        if isinstance(condition, dict) and "threshold" in condition:
+            kwargs["threshold"] = condition["threshold"]
+        kwargs.pop("actions", None)
         return self.update_alert_rule(rule_id, **kwargs)
 
     def delete_rule(self, rule_id, user_id=0):

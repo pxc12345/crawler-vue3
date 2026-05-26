@@ -74,6 +74,20 @@
               </div>
             </div>
             <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">爬取模式</label>
+                <select v-model="form.crawlMode" class="form-input" :disabled="!editing">
+                  <option value="link">链接模式</option>
+                  <option value="image">图片模式</option>
+                  <option value="mixed">混合模式</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label">爬取页数</label>
+                <input v-model.number="form.totalPages" type="number" class="form-input" :disabled="!editing" min="1" max="100" />
+              </div>
+            </div>
+            <div class="form-row">
               <div class="form-group full">
                 <label class="form-label">请求头 (JSON)</label>
                 <textarea v-model="form.headers" class="form-textarea" :disabled="!editing" rows="3"></textarea>
@@ -297,25 +311,43 @@ const form = reactive({
   concurrency: 0,
   interval: 0,
   maxRetries: 0,
-  headers: ''
+  headers: '',
+  crawlMode: 'link',
+  totalPages: 1
 })
 
 const formBackup = ref(null)
 
+function parseTaskConfig(raw) {
+  if (!raw) return {}
+  if (typeof raw === 'object') return raw
+  if (typeof raw === 'string' && raw.trim()) {
+    try {
+      return JSON.parse(raw)
+    } catch (e) {
+      return {}
+    }
+  }
+  return {}
+}
+
 function loadForm() {
   const t = task.value
-  const config = t.config || {}
-  if (typeof config === 'string') {
-    try { config = JSON.parse(config) } catch (e) { config = {} }
-  }
-  
+  const config = parseTaskConfig(t.config)
+
   // 任务表字段（优先从任务表读取，其次从 config 读取）
   form.name = t.name || ''
   form.url = t.target_url || config.target_url || ''
   
   // 处理执行周期（cron_expr 在 config 中，格式为 "*/30 * * * *"）
   const cronExpr = config.cron_expr || t.cron_expr || ''
-  form.intervalMinutes = cronToMinutes(cronExpr)
+  if (cronExpr) {
+    form.intervalMinutes = cronToMinutes(cronExpr)
+  } else {
+    // 无 cron 时回退：从 interval_seconds 换算为分钟
+    const intervalSec = config.interval_seconds || config.interval || t.interval_seconds || 0
+    form.intervalMinutes = intervalSec > 0 ? Math.round(intervalSec / 60) : 30
+  }
   
   // 处理并发数（config 中是 concurrency）
   form.concurrency = config.concurrency || t.concurrency || 0
@@ -323,9 +355,15 @@ function loadForm() {
   // 处理请求间隔（config 中是 interval_seconds）
   form.interval = config.interval_seconds || config.interval || t.interval_seconds || 0
   
-  // 处理最大重试次数（config 中是 maxRetries，表中是 retry_count）
-  form.maxRetries = config.maxRetries || t.retry_count || 0
-  
+  // 处理最大重试次数（config 中是 maxRetries/max_retries，表中是 retry_count）
+  form.maxRetries = config.maxRetries ?? config.max_retries ?? t.retry_count ?? 0
+
+  // 处理爬取模式
+  form.crawlMode = config.crawl_mode || 'link'
+
+  // 处理爬取页数
+  form.totalPages = config.total_pages || 1
+
   // 处理请求头
   if (typeof config.headers === 'object') {
     form.headers = JSON.stringify(config.headers)
@@ -347,13 +385,25 @@ function cancelEdit() {
 
 async function saveConfig() {
   try {
+    // 解析请求头 JSON 字符串为对象
+    let parsedHeaders = form.headers
+    if (typeof form.headers === 'string' && form.headers.trim()) {
+      try {
+        parsedHeaders = JSON.parse(form.headers)
+      } catch (e) {
+        parsedHeaders = form.headers.trim()
+      }
+    }
+
     const config = {
       target_url: form.url,
+      total_pages: form.totalPages,
       cron_expr: minutesToCron(form.intervalMinutes),
-      concurrency: form.concurrency,
       interval_seconds: form.interval,
+      concurrency: form.concurrency,
       maxRetries: form.maxRetries,
-      headers: form.headers
+      crawl_mode: form.crawlMode,
+      headers: parsedHeaders
     }
     const res = await taskAPI.updateTask(task.value.id, {
       name: form.name,
@@ -362,10 +412,6 @@ async function saveConfig() {
     if (res.data.success) {
       task.value.name = form.name
       task.value.target_url = form.url
-      task.value.cron_expr = minutesToCron(form.intervalMinutes)
-      task.value.concurrency = form.concurrency
-      task.value.interval_seconds = form.interval
-      task.value.retry_count = form.maxRetries
       task.value.config = config
       editing.value = false
       ElMessage.success('保存成功')
@@ -384,18 +430,26 @@ const dataSummary = ref(null)
 const dataSummaryLoading = ref(false)
 
 async function fetchTask() {
-  // 跳过无效的 task id
-  if (!route.params.id || route.params.id === 'new' || route.params.id === 'undefined') {
+  const taskId = route.params.id
+  if (!taskId || taskId === 'new' || taskId === 'undefined') {
     return
   }
   try {
-    const res = await taskAPI.getTask(route.params.id)
+    const res = await taskAPI.getTask(taskId)
     if (res.data.success) {
-      task.value = res.data.data
+      const data = res.data.data
+      if (typeof data.config === 'string') {
+        data.config = parseTaskConfig(data.config)
+      }
+      task.value = data
       loadForm()
+      if (route.query.edit === '1') {
+        editing.value = true
+      }
     }
   } catch (e) {
     console.error('获取任务详情失败:', e)
+    ElMessage.error('获取任务详情失败')
   }
 }
 
@@ -493,16 +547,29 @@ onMounted(() => {
   fetchTask()
 })
 
+watch(() => route.params.id, (id, prevId) => {
+  if (id && id !== prevId && id !== 'new' && id !== 'undefined') {
+    editing.value = route.query.edit === '1'
+    fetchTask()
+    if (activeTab.value === 'logs') {
+      refreshLogs()
+    }
+  }
+})
+
 watch(activeTab, (val) => {
   if (val === 'records') {
     fetchVersions()
   }
-  if (val === 'logs' && autoScroll.value) {
-    nextTick(() => {
-      if (logViewerRef.value) {
-        logViewerRef.value.scrollTop = logViewerRef.value.scrollHeight
-      }
-    })
+  if (val === 'logs') {
+    refreshLogs()
+    if (autoScroll.value) {
+      nextTick(() => {
+        if (logViewerRef.value) {
+          logViewerRef.value.scrollTop = logViewerRef.value.scrollHeight
+        }
+      })
+    }
   }
   if (val === 'preview') {
     fetchDataSummary()

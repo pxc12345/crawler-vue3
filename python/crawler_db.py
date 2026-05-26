@@ -78,6 +78,10 @@ class CrawlerDB:
                 cursor.execute("SHOW COLUMNS FROM `crawler_data` LIKE 'type'")
                 if not cursor.fetchone():
                     cursor.execute("ALTER TABLE `crawler_data` ADD COLUMN `type` VARCHAR(20) NOT NULL DEFAULT 'link' COMMENT '数据类型: link/image/mixed' AFTER `page_number`")
+
+                cursor.execute("SHOW COLUMNS FROM `crawler_data` LIKE 'task_id'")
+                if not cursor.fetchone():
+                    cursor.execute("ALTER TABLE `crawler_data` ADD COLUMN `task_id` INT DEFAULT NULL COMMENT '关联任务ID' AFTER `type`")
             
             conn.commit()
             conn.close()
