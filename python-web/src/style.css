@@ -466,6 +466,24 @@ select.form-input:disabled {
   border-color: var(--border-color) !important;
 }
 
+/* 数据表格溢出 / 链接 tooltip：挂到 body，避免压在单元格文字上 */
+.data-table-tooltip.el-popper {
+  max-width: min(480px, 90vw) !important;
+  padding: 8px 12px !important;
+  font-size: 12px !important;
+  line-height: 1.45 !important;
+  word-break: break-all;
+  z-index: 5000 !important;
+  background: rgba(22, 27, 34, 0.96) !important;
+  border: 1px solid var(--border-color) !important;
+  color: rgba(255, 255, 255, 0.92) !important;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45) !important;
+}
+.data-table-tooltip.el-popper .el-popper__arrow::before {
+  background: rgba(22, 27, 34, 0.96) !important;
+  border-color: var(--border-color) !important;
+}
+
 /* Element Plus Loading 遮罩随主题色，避免默认白底 */
 .el-loading-mask {
   background-color: rgba(0, 0, 0, 0.55) !important;

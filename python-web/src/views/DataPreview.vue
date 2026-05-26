@@ -75,6 +75,7 @@
           element-loading-custom-class="app-theme-loading"
           element-loading-text="加载中..."
           :data="tableData"
+          :tooltip-options="tableTooltipOptions"
           border
           class="data-el-table"
           style="width: 100%"
@@ -84,9 +85,25 @@
         >
           <el-table-column type="selection" width="48" fixed="left" />
           <el-table-column v-if="columnVisible('title')" prop="title" label="标题" min-width="160" sortable="custom" show-overflow-tooltip />
-          <el-table-column v-if="columnVisible('link')" prop="link" label="链接" min-width="180" sortable="custom" show-overflow-tooltip>
+          <el-table-column v-if="columnVisible('link')" prop="link" label="链接" min-width="180" sortable="custom">
             <template #default="{ row }">
-              <a v-if="row.link" :href="row.link" target="_blank" rel="noopener" class="data-link">{{ row.link }}</a>
+              <el-tooltip
+                v-if="row.link"
+                :content="row.link"
+                placement="top"
+                :show-after="400"
+                teleported
+                effect="dark"
+                popper-class="data-table-tooltip"
+              >
+                <a
+                  :href="row.link"
+                  target="_blank"
+                  rel="noopener"
+                  class="data-link data-link-ellipsis"
+                  @click.stop
+                >{{ row.link }}</a>
+              </el-tooltip>
               <span v-else class="text-muted">—</span>
             </template>
           </el-table-column>
@@ -207,6 +224,15 @@ const sortDir = ref('desc')
 let searchDebounceTimer = null
 
 const typeLabels = { link: '链接', image: '图片', page: '页面', mixed: '混合' }
+
+/** 表格溢出提示挂到 body，避免被 overflow:hidden 裁切或定位到单元格内 */
+const tableTooltipOptions = {
+  placement: 'top',
+  teleported: true,
+  effect: 'dark',
+  popperClass: 'data-table-tooltip',
+  showArrow: true,
+}
 
 const columns = ref([
   { key: 'title', label: '标题', visible: true },
@@ -568,7 +594,15 @@ onBeforeUnmount(() => {
 .column-option input { accent-color: var(--accent-primary); }
 .filter-result { margin-top: 12px; font-size: 12px; color: var(--text-muted); }
 .refresh-hint { margin-left: 6px; color: var(--accent-primary); font-weight: 500; }
-.table-card { overflow: hidden; padding: 0; }
+.table-card {
+  padding: 0;
+  overflow: visible;
+  border-radius: 12px;
+}
+.table-card :deep(.el-table__inner-wrapper) {
+  border-radius: 12px;
+  overflow: hidden;
+}
 .table-card.is-refreshing { opacity: 0.92; transition: opacity 0.2s ease; }
 .data-el-table {
   --el-table-bg-color: transparent;
@@ -601,7 +635,10 @@ onBeforeUnmount(() => {
   border-color: var(--border-color) !important;
 }
 .data-el-table :deep(.el-table__body tr:hover > td.el-table__cell) {
-  background-color: rgba(var(--accent-rgb), 0.08) !important;
+  background-color: rgba(var(--accent-rgb), 0.1) !important;
+}
+.data-el-table :deep(.el-table__body tr:hover > td.el-table__cell .cell) {
+  color: var(--text-primary) !important;
 }
 .data-el-table :deep(.el-table__body .cell) {
   color: var(--text-secondary);
@@ -628,7 +665,20 @@ onBeforeUnmount(() => {
   color: var(--accent-color);
   text-decoration: none;
 }
-.data-link:hover { text-decoration: underline; }
+.data-link:hover { text-decoration: underline; color: var(--active-color); }
+.data-link-ellipsis {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 1.5;
+}
+.data-el-table :deep(.el-tooltip__trigger) {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+}
 .text-muted { color: var(--text-muted); font-size: 12px; }
 .type-tag {
   display: inline-block; padding: 3px 10px; border-radius: 6px;

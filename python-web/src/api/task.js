@@ -61,8 +61,13 @@ export const taskAPI = {
     return api.get(`/tasks/${taskId}/versions`)
   },
 
-  getDataSummary(taskId) {
-    return api.get(`/tasks/${taskId}/data-summary`)
+  /** 仅「启动运行」产生的执行记录，不含编辑配置 */
+  getExecutions(taskId) {
+    return api.get(`/tasks/${taskId}/executions`)
+  },
+
+  getDataSummary(taskId, params = {}) {
+    return api.get(`/tasks/${taskId}/data-summary`, { params })
   },
 
   rollbackVersion(taskId, versionId) {

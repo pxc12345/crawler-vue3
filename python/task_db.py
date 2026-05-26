@@ -514,6 +514,8 @@ class TaskDB:
             if conn:
                 conn.close()
 
+    EXECUTION_LOG_PREFIX = "执行结果:"
+
     def save_task_version(self, task_id, config, change_log=""):
         conn = None
         try:
@@ -546,6 +548,53 @@ class TaskDB:
             if conn:
                 conn.close()
 
+    def save_execution_record(self, task_id, config, status, data_count):
+        """仅任务启动并跑完后写入，与编辑配置无关"""
+        change_log = "{}{}, 数据: {}条".format(
+            self.EXECUTION_LOG_PREFIX, status, data_count
+        )
+        return self.save_task_version(task_id, config, change_log)
+
+    def _normalize_version_rows(self, rows):
+        for row in rows:
+            if row.get("created_at"):
+                row["created_at"] = row["created_at"].strftime("%Y-%m-%d %H:%M:%S")
+            cfg = row.get("config")
+            if isinstance(cfg, str) and cfg.strip():
+                try:
+                    row["config"] = json.loads(cfg)
+                except (json.JSONDecodeError, TypeError):
+                    row["config"] = {}
+            elif not isinstance(cfg, dict):
+                row["config"] = {}
+            row["record_type"] = (
+                "execution"
+                if (row.get("change_log") or "").strip().startswith(self.EXECUTION_LOG_PREFIX)
+                else "config"
+            )
+        return rows
+
+    def get_task_executions(self, task_id):
+        """只返回「点击启动」产生的执行记录，不含编辑配置产生的版本"""
+        conn = None
+        try:
+            conn = pymysql.connect(**self._config)
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    "SELECT * FROM `task_versions` WHERE `task_id` = %(task_id)s "
+                    "AND `change_log` LIKE %(prefix)s "
+                    "ORDER BY `version_index` DESC",
+                    {"task_id": task_id, "prefix": self.EXECUTION_LOG_PREFIX + "%"},
+                )
+                rows = cursor.fetchall()
+                return self._normalize_version_rows(rows)
+        except pymysql.Error as e:
+            print(f"查询任务执行记录失败: {e}")
+            return []
+        finally:
+            if conn:
+                conn.close()
+
     def get_task_versions(self, task_id):
         conn = None
         try:
@@ -556,10 +605,7 @@ class TaskDB:
                     {"task_id": task_id}
                 )
                 rows = cursor.fetchall()
-                for row in rows:
-                    if row.get("created_at"):
-                        row["created_at"] = row["created_at"].strftime("%Y-%m-%d %H:%M:%S")
-                return rows
+                return self._normalize_version_rows(rows)
         except pymysql.Error as e:
             print(f"查询任务版本列表失败: {e}")
             return []

@@ -853,10 +853,21 @@ class CrawlerEngine:
             self._elapsed_seconds = int(time.time() - self._start_time)
             if self._task_id and db_callback:
                 try:
+                    total_pages = max(1, self._total_pages or 1)
+                    succeeded = self._succeeded_pages or 0
+                    success_rate = min(
+                        100.0, round((succeeded / total_pages) * 100, 2)
+                    )
                     db_callback({
                         "type": "complete",
                         "task_id": self._task_id,
                         "status": self._status,
+                        "execution_time": self._elapsed_seconds,
+                        "collected_count": self._collected_count,
+                        "succeeded_pages": succeeded,
+                        "total_pages": total_pages,
+                        "success_rate": success_rate,
+                        "error_message": self._error_message or "",
                     })
                 except Exception as e:
                     print(f"[Crawler] Update task status error: {e}")

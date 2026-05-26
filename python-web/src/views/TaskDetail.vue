@@ -149,7 +149,12 @@
         </div>
 
         <div v-if="activeTab === 'records'" class="tab-panel records-panel">
-          <div class="timeline">
+          <p class="records-hint">仅展示任务「启动运行」产生的执行记录；保存配置不会产生新记录。</p>
+          <div v-if="executionRecords.length === 0" class="records-empty">
+            <p>暂无执行记录</p>
+            <p class="records-empty-desc">点击「启动」运行任务后，每次结束会在此生成一条记录</p>
+          </div>
+          <div v-else class="timeline">
             <div v-for="record in executionRecords" :key="record.id" class="timeline-item">
               <div class="timeline-dot" :class="'dot-' + record.status"></div>
               <div class="timeline-card">
@@ -161,6 +166,7 @@
                   <span>持续时间: {{ record.duration }}</span>
                   <span>采集数据: {{ record.dataCount }} 条</span>
                 </div>
+                <p v-if="record.summary" class="timeline-card-summary">{{ record.summary }}</p>
                 <div class="timeline-card-time">{{ record.time }}</div>
               </div>
             </div>
@@ -168,89 +174,128 @@
         </div>
 
         <div v-if="activeTab === 'preview'" class="tab-panel preview-panel">
-          <div v-if="dataSummaryLoading" class="loading-state">
+          <div v-if="dataSummaryLoading && previewTableLoading" class="loading-state">
             <div class="spinner"></div>
             <span>加载中...</span>
           </div>
-          <div v-else-if="!dataSummary" class="empty-state">
-            <div class="empty-icon">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-                <path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/>
-                <polyline points="13 2 13 9 20 9"/>
-              </svg>
-            </div>
-            <p class="empty-text">暂无数据</p>
-            <p class="empty-desc">启动任务后将自动采集数据</p>
-          </div>
-          <div v-else class="data-overview">
-            <div class="overview-header">
-              <h3 class="overview-title">{{ dataSummary.task_name }}</h3>
-              <span class="overview-badge" :class="task.status">{{ statusLabel(task.status) }}</span>
-            </div>
-            <div class="stats-grid">
-              <div class="stat-card">
-                <div class="stat-icon blue">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
-                  </svg>
+          <div v-else class="preview-layout">
+            <aside class="preview-sidebar">
+              <div class="side-stat-card">
+                <p class="side-label">本次执行</p>
+                <span class="side-status" :class="'status-' + (task.status || 'pending')">
+                  <span class="status-dot"></span>
+                  {{ statusLabel(task.status) }}
+                </span>
+                <div class="side-metrics">
+                  <div class="side-metric">
+                    <span class="side-metric-value">{{ previewTotalCount }}</span>
+                    <span class="side-metric-label">采集条数</span>
+                  </div>
+                  <div class="side-metric">
+                    <span class="side-metric-value">{{ Math.round(dataSummary?.success_rate || 0) }}%</span>
+                    <span class="side-metric-label">成功率</span>
+                  </div>
+                  <div class="side-metric">
+                    <span class="side-metric-value side-metric-sm">{{ formatDuration(dataSummary?.execution_time) }}</span>
+                    <span class="side-metric-label">耗时</span>
+                  </div>
                 </div>
-                <div class="stat-info">
-                  <span class="stat-value">{{ dataSummary.total_count || dataSummary.data_count || 0 }}</span>
-                  <span class="stat-label">采集数据条数</span>
-                </div>
+                <p v-if="dataSummary?.last_run_started_at" class="side-hint">
+                  执行始于 {{ dataSummary.last_run_started_at }}
+                </p>
+                <p v-if="dataSummary?.last_collected_at" class="side-hint muted">
+                  最近入库 {{ dataSummary.last_collected_at }}
+                </p>
+                <p v-if="dataSummary?.latest_only" class="side-scope">
+                  仅展示本次执行采集的数据
+                </p>
+                <p v-if="task.error_message || dataSummary?.error_message" class="side-error" :title="task.error_message || dataSummary?.error_message">
+                  {{ (task.error_message || dataSummary?.error_message || '').slice(0, 120) }}
+                </p>
               </div>
-              <div class="stat-card">
-                <div class="stat-icon green">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
-                    <line x1="16" y1="2" x2="16" y2="6"/>
-                    <line x1="8" y1="2" x2="8" y2="6"/>
-                    <line x1="3" y1="10" x2="21" y2="10"/>
-                  </svg>
-                </div>
-                <div class="stat-info">
-                  <span class="stat-value">{{ dataSummary.today_count || 0 }}</span>
-                  <span class="stat-label">今日采集</span>
-                </div>
-              </div>
-              <div class="stat-card">
-                <div class="stat-icon yellow">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <circle cx="12" cy="12" r="10"/>
-                    <polyline points="12 6 12 12 16 14"/>
-                  </svg>
-                </div>
-                <div class="stat-info">
-                  <span class="stat-value">{{ formatDuration(dataSummary.execution_time) }}</span>
-                  <span class="stat-label">总执行时间</span>
-                </div>
-              </div>
-              <div class="stat-card">
-                <div class="stat-icon purple">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
-                  </svg>
-                </div>
-                <div class="stat-info">
-                  <span class="stat-value">{{ dataSummary.success_rate || 0 }}%</span>
-                  <span class="stat-label">成功率</span>
-                </div>
-              </div>
-            </div>
-            
-            <div v-if="dataSummary.type_distribution && Object.keys(dataSummary.type_distribution).length > 0" class="type-section">
-              <h4 class="section-title">数据类型分布</h4>
-              <div class="type-list">
-                <div v-for="(count, type) in dataSummary.type_distribution" :key="type" class="type-item">
-                  <span class="type-name">{{ type === 'link' ? '链接' : type === 'image' ? '图片' : type }}</span>
-                  <span class="type-count">{{ count }} 条</span>
-                </div>
-              </div>
-            </div>
+              <button type="button" class="btn-refresh-preview" :disabled="previewTableLoading" @click="refreshPreview">
+                {{ previewTableLoading ? '刷新中…' : '刷新数据' }}
+              </button>
+            </aside>
 
-            <div v-if="dataSummary.last_collected_at" class="time-section">
-              <h4 class="section-title">最近采集时间</h4>
-              <span class="last-time">{{ dataSummary.last_collected_at }}</span>
+            <div class="preview-main">
+              <div class="preview-table-header">
+                <h3 class="preview-table-title">采集明细</h3>
+                <span class="preview-table-meta">共 {{ previewTotal }} 条 · 第 {{ previewPage }} / {{ previewTotalPages }} 页</span>
+              </div>
+              <div class="preview-table-card" :class="{ 'is-refreshing': previewTableLoading }">
+                <el-table
+                  v-loading="previewTableLoading"
+                  element-loading-custom-class="app-theme-loading"
+                  :data="previewTableData"
+                  :tooltip-options="tableTooltipOptions"
+                  border
+                  class="data-el-table task-preview-table"
+                  style="width: 100%"
+                  max-height="520"
+                  empty-text="本次执行暂无采集数据，请先启动任务"
+                >
+                  <el-table-column prop="title" label="标题" min-width="140" show-overflow-tooltip />
+                  <el-table-column prop="link" label="链接" min-width="160">
+                    <template #default="{ row }">
+                      <el-tooltip
+                        v-if="row.link"
+                        :content="row.link"
+                        placement="top"
+                        :show-after="400"
+                        teleported
+                        effect="dark"
+                        popper-class="data-table-tooltip"
+                      >
+                        <a
+                          :href="row.link"
+                          target="_blank"
+                          rel="noopener"
+                          class="data-link data-link-ellipsis"
+                          @click.stop
+                        >{{ row.link }}</a>
+                      </el-tooltip>
+                      <span v-else class="text-muted">—</span>
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="图片" width="88" align="center">
+                    <template #default="{ row }">
+                      <div v-if="getPreviewImageUrl(row)" class="thumb-cell">
+                        <el-image
+                          :src="getPreviewImageUrl(row)"
+                          :preview-src-list="[getPreviewImageUrl(row)]"
+                          :preview-teleported="true"
+                          fit="cover"
+                          lazy
+                          class="thumb-image"
+                        >
+                          <template #error><span class="img-error">—</span></template>
+                        </el-image>
+                      </div>
+                      <span v-else class="text-muted">—</span>
+                    </template>
+                  </el-table-column>
+                  <el-table-column prop="content" label="内容摘要" min-width="160" show-overflow-tooltip />
+                  <el-table-column prop="type" label="类型" width="80" align="center">
+                    <template #default="{ row }">
+                      <span class="type-tag" :class="'tag-' + (row.type || 'link')">{{ previewTypeLabel(row.type) }}</span>
+                    </template>
+                  </el-table-column>
+                  <el-table-column prop="collected_at" label="采集时间" width="168" />
+                </el-table>
+                <div v-if="previewTotal > 0" class="preview-pagination">
+                  <el-pagination
+                    v-model:current-page="previewPage"
+                    v-model:page-size="previewPageSize"
+                    :page-sizes="[10, 20, 50]"
+                    :total="previewTotal"
+                    layout="total, sizes, prev, pager, next"
+                    background
+                    @size-change="onPreviewSizeChange"
+                    @current-change="fetchPreviewTable"
+                  />
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -260,12 +305,13 @@
 </template>
 
 <script setup>
-import { ref, reactive, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
+import { ref, reactive, computed, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import NavBar from '../components/NavBar.vue'
 import { taskAPI } from '../api/task'
 import { systemAPI } from '../api/system'
+import { dataAPI } from '../api/data'
 
 const route = useRoute()
 const activeTab = ref('info')
@@ -428,6 +474,38 @@ const logs = ref([])
 const logsLoading = ref(false)
 const dataSummary = ref(null)
 const dataSummaryLoading = ref(false)
+const previewTableData = ref([])
+const previewTableLoading = ref(false)
+const previewPage = ref(1)
+const previewPageSize = ref(20)
+const previewTotal = ref(0)
+
+const previewTotalPages = computed(() =>
+  Math.max(1, Math.ceil(previewTotal.value / previewPageSize.value))
+)
+const previewTotalCount = computed(() =>
+  dataSummary.value?.total_count ?? previewTotal.value ?? 0
+)
+
+const previewTypeLabels = { link: '链接', image: '图片', page: '页面', mixed: '混合' }
+function previewTypeLabel(type) {
+  return previewTypeLabels[type] || type || '—'
+}
+
+const tableTooltipOptions = {
+  placement: 'top',
+  teleported: true,
+  effect: 'dark',
+  popperClass: 'data-table-tooltip',
+  showArrow: true,
+}
+
+function getPreviewImageUrl(row) {
+  const url = (row.image_url || '').trim()
+  if (url) return url
+  if (row.type === 'image' && row.link) return row.link.trim()
+  return ''
+}
 
 async function fetchTask() {
   const taskId = route.params.id
@@ -441,7 +519,12 @@ async function fetchTask() {
       if (typeof data.config === 'string') {
         data.config = parseTaskConfig(data.config)
       }
-      task.value = data
+      const status = (data.status || 'pending').toLowerCase()
+      task.value = {
+        ...data,
+        status: status === 'error' ? 'failed' : status,
+        error_message: data.error_message || '',
+      }
       loadForm()
       if (route.query.edit === '1') {
         editing.value = true
@@ -453,55 +536,87 @@ async function fetchTask() {
   }
 }
 
-async function fetchVersions() {
-  // 跳过无效的 task id
+function formatExecutionDuration(seconds) {
+  const t = Number(seconds)
+  if (Number.isNaN(t)) return 'N/A'
+  if (t <= 0) return '0s'
+  if (t >= 3600) {
+    return `${Math.floor(t / 3600)}h ${Math.floor((t % 3600) / 60)}m`
+  }
+  if (t >= 60) {
+    return `${Math.floor(t / 60)}m ${t % 60}s`
+  }
+  return `${t}s`
+}
+
+/** 仅解析真实「任务执行」产生的版本（过滤历史误写入的配置版本） */
+function mapVersionToExecutionRecord(v, index, total) {
+  const changeLog = v.change_log || ''
+  let config = v.config || {}
+  if (typeof config === 'string') {
+    try {
+      config = JSON.parse(config)
+    } catch {
+      config = {}
+    }
+  }
+  const lastExec = config._last_execution || {}
+  if (!/^执行结果:/i.test(changeLog.trim())) {
+    return null
+  }
+
+  let status = 'completed'
+  const rawStatus = (lastExec.status || '').toString().toUpperCase()
+  if (rawStatus) {
+    status = rawStatus === 'COMPLETED' ? 'completed' : 'failed'
+  } else {
+    const m = changeLog.match(/执行结果:\s*(\w+)/i)
+    if (m) {
+      status = m[1].toUpperCase() === 'COMPLETED' ? 'completed' : 'failed'
+    }
+  }
+
+  let dataCount = Number(lastExec.data_count)
+  if (Number.isNaN(dataCount)) dataCount = 0
+  const dm = changeLog.match(/数据:\s*(\d+)\s*条/)
+  if (dataCount === 0 && dm) {
+    dataCount = parseInt(dm[1], 10) || 0
+  }
+
+  let duration = 'N/A'
+  if (lastExec.execution_time !== undefined && lastExec.execution_time !== null) {
+    duration = formatExecutionDuration(lastExec.execution_time)
+  }
+
+  const summary = changeLog || (lastExec.error_message ? String(lastExec.error_message).slice(0, 80) : '')
+
+  return {
+    id: v.id,
+    version: v.version_index || (total - index),
+    status,
+    duration,
+    dataCount,
+    time: v.created_at || '',
+    changeLog,
+    summary,
+  }
+}
+
+async function fetchExecutionRecords() {
   if (!route.params.id || route.params.id === 'new' || route.params.id === 'undefined') {
     return
   }
   try {
-    const res = await taskAPI.getVersions(route.params.id)
+    const res = await taskAPI.getExecutions(route.params.id)
     if (res.data.success) {
       const versions = res.data.data || []
-      executionRecords.value = versions.map((v, index) => {
-        // 从配置中提取执行结果信息
-        let status = 'completed'
-        let duration = 'N/A'
-        let dataCount = 0
-        let errorInfo = ''
-        
-        try {
-          const config = typeof v.config === 'string' ? JSON.parse(v.config) : (v.config || {})
-          const lastExec = config._last_execution || {}
-          if (lastExec.status) {
-            status = lastExec.status.toLowerCase() === 'completed' ? 'completed' : 'failed'
-          }
-          if (lastExec.execution_time) {
-            const t = lastExec.execution_time
-            if (t >= 3600) {
-              duration = `${Math.floor(t/3600)}h ${Math.floor((t%3600)/60)}m`
-            } else if (t >= 60) {
-              duration = `${Math.floor(t/60)}m ${t%60}s`
-            } else {
-              duration = `${t}s`
-            }
-          }
-          dataCount = lastExec.data_count || 0
-          errorInfo = lastExec.error_message || ''
-        } catch (e) {}
-        
-        return {
-          id: v.id,
-          version: v.version_index || (versions.length - index),
-          status: status,
-          duration: duration,
-          dataCount: dataCount,
-          time: v.created_at || '',
-          changeLog: v.change_log || ''
-        }
-      })
+      executionRecords.value = versions
+        .map((v, index) => mapVersionToExecutionRecord(v, index, versions.length))
+        .filter(Boolean)
     }
   } catch (e) {
-    console.error('获取版本列表失败:', e)
+    console.error('获取执行记录失败:', e)
+    executionRecords.value = []
   }
 }
 
@@ -532,7 +647,7 @@ async function fetchDataSummary() {
   }
   dataSummaryLoading.value = true
   try {
-    const res = await taskAPI.getDataSummary(route.params.id)
+    const res = await taskAPI.getDataSummary(route.params.id, { latest_only: 1 })
     if (res.data.success) {
       dataSummary.value = res.data.data
     }
@@ -541,6 +656,58 @@ async function fetchDataSummary() {
   } finally {
     dataSummaryLoading.value = false
   }
+}
+
+async function fetchPreviewTable() {
+  const taskId = route.params.id
+  if (!taskId || taskId === 'new' || taskId === 'undefined') return
+
+  previewTableLoading.value = true
+  try {
+    const params = {
+      task_id: taskId,
+      page: previewPage.value,
+      page_size: previewPageSize.value,
+      sort_field: 'collected_at',
+      sort_order: 'desc',
+    }
+    if (dataSummary.value?.last_run_started_at) {
+      params.since = dataSummary.value.last_run_started_at
+    }
+    const res = await dataAPI.getDataList(params)
+    if (res.data.success) {
+      const data = res.data.data || {}
+      previewTableData.value = data.list || []
+      previewTotal.value = data.total ?? 0
+      if (data.page) previewPage.value = data.page
+    } else {
+      previewTableData.value = []
+      previewTotal.value = 0
+    }
+  } catch (e) {
+    console.error('获取任务采集数据失败:', e)
+    previewTableData.value = []
+    previewTotal.value = 0
+  } finally {
+    previewTableLoading.value = false
+  }
+}
+
+function onPreviewSizeChange() {
+  previewPage.value = 1
+  fetchPreviewTable()
+}
+
+async function refreshPreview() {
+  await fetchDataSummary()
+  previewPage.value = 1
+  await fetchPreviewTable()
+}
+
+async function loadPreviewTab() {
+  await fetchDataSummary()
+  previewPage.value = 1
+  await fetchPreviewTable()
 }
 
 onMounted(() => {
@@ -559,7 +726,7 @@ watch(() => route.params.id, (id, prevId) => {
 
 watch(activeTab, (val) => {
   if (val === 'records') {
-    fetchVersions()
+    fetchExecutionRecords()
   }
   if (val === 'logs') {
     refreshLogs()
@@ -572,7 +739,7 @@ watch(activeTab, (val) => {
     }
   }
   if (val === 'preview') {
-    fetchDataSummary()
+    loadPreviewTab()
   }
 })
 </script>
@@ -1070,9 +1237,347 @@ select.form-input option {
   color: rgba(255, 255, 255, 0.2);
 }
 
-.preview-panel {
-  padding: 24px;
+.timeline-card-summary {
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.4;
+  word-break: break-word;
 }
+
+.records-hint {
+  margin-bottom: 16px;
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.records-empty {
+  text-align: center;
+  padding: 48px 20px;
+  color: var(--text-muted);
+}
+
+.records-empty p {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+}
+
+.records-empty-desc {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.preview-panel {
+  padding: 20px 24px 28px;
+}
+
+.preview-layout {
+  display: flex;
+  gap: 20px;
+  align-items: flex-start;
+  min-height: 480px;
+}
+
+.preview-sidebar {
+  flex: 0 0 200px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  position: sticky;
+  top: 88px;
+}
+
+.side-stat-card {
+  padding: 16px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 14px;
+}
+
+.side-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 10px;
+}
+
+.side-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  margin-bottom: 14px;
+}
+
+.side-status .status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.side-status.status-running { background: rgba(16, 185, 129, 0.12); color: #34d399; }
+.side-status.status-pending { background: rgba(var(--accent-rgb), 0.12); color: var(--accent-color); }
+.side-status.status-completed { background: rgba(255, 255, 255, 0.06); color: var(--text-secondary); }
+.side-status.status-failed { background: rgba(239, 68, 68, 0.12); color: #f87171; }
+
+.side-metrics {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.side-metric {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.side-metric-value {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text-primary);
+  line-height: 1.2;
+}
+
+.side-metric-value.side-metric-sm {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.side-metric-label {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.side-hint {
+  margin-top: 12px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  line-height: 1.45;
+}
+
+.side-hint.muted {
+  color: var(--text-muted);
+}
+
+.side-scope {
+  margin-top: 8px;
+  font-size: 10px;
+  color: var(--accent-primary);
+  line-height: 1.4;
+}
+
+.side-error {
+  margin-top: 10px;
+  padding: 8px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: #fca5a5;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.25);
+  border-radius: 8px;
+  word-break: break-word;
+}
+
+.btn-refresh-preview {
+  width: 100%;
+  padding: 9px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-refresh-preview:hover:not(:disabled) {
+  color: var(--text-primary);
+  border-color: rgba(var(--accent-rgb), 0.35);
+}
+
+.btn-refresh-preview:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.preview-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.preview-table-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.preview-table-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.preview-table-meta {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.preview-table-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 14px;
+  overflow: visible;
+  transition: opacity 0.2s ease;
+}
+
+.preview-table-card :deep(.el-table__inner-wrapper) {
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+.preview-table-card.is-refreshing {
+  opacity: 0.92;
+}
+
+.preview-pagination {
+  display: flex;
+  justify-content: center;
+  padding: 16px;
+  border-top: 1px solid var(--border-color);
+}
+
+.preview-pagination :deep(.el-pagination) {
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+/* 与数据预览页一致的表格样式 */
+.task-preview-table.data-el-table {
+  --el-table-bg-color: transparent;
+  --el-table-tr-bg-color: transparent;
+  --el-table-header-bg-color: rgba(0, 0, 0, 0.25);
+  --el-table-row-hover-bg-color: rgba(var(--accent-rgb), 0.08);
+  --el-table-border-color: var(--border-color);
+  --el-table-text-color: var(--text-secondary);
+  --el-table-header-text-color: var(--text-muted);
+  --el-fill-color-lighter: rgba(255, 255, 255, 0.03);
+  --el-bg-color: transparent;
+}
+
+.task-preview-table.data-el-table :deep(.el-table__inner-wrapper),
+.task-preview-table.data-el-table :deep(.el-table__body-wrapper),
+.task-preview-table.data-el-table :deep(.el-table__header-wrapper) {
+  background-color: transparent !important;
+}
+
+.task-preview-table.data-el-table :deep(.el-table__header th.el-table__cell) {
+  background-color: rgba(0, 0, 0, 0.25) !important;
+  color: var(--text-muted) !important;
+  border-color: var(--border-color) !important;
+}
+
+.task-preview-table.data-el-table :deep(.el-table__body tr) {
+  background-color: rgba(255, 255, 255, 0.02) !important;
+}
+
+.task-preview-table.data-el-table :deep(.el-table__body td.el-table__cell) {
+  background-color: transparent !important;
+  color: var(--text-secondary) !important;
+  border-color: var(--border-color) !important;
+}
+
+.task-preview-table.data-el-table :deep(.el-table__body tr:hover > td.el-table__cell) {
+  background-color: rgba(var(--accent-rgb), 0.1) !important;
+}
+
+.task-preview-table.data-el-table :deep(.el-table__body tr:hover > td.el-table__cell .cell) {
+  color: var(--text-primary) !important;
+}
+
+.task-preview-table.data-el-table :deep(.el-table__body .cell) {
+  color: var(--text-secondary);
+}
+
+.task-preview-table.data-el-table :deep(.el-table__empty-block) {
+  background-color: transparent !important;
+}
+
+.thumb-cell {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.thumb-image {
+  width: 48px;
+  height: 48px;
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
+  cursor: zoom-in;
+}
+
+.img-error {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.data-link {
+  color: var(--accent-color);
+  text-decoration: none;
+}
+
+.data-link:hover {
+  text-decoration: underline;
+  color: var(--active-color);
+}
+
+.data-link-ellipsis {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 1.5;
+}
+
+.task-preview-table.data-el-table :deep(.el-tooltip__trigger) {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.text-muted {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.type-tag {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.tag-link { background: rgba(var(--accent-rgb), 0.15); color: var(--active-color); }
+.tag-image { background: rgba(16, 185, 129, 0.15); color: #34d399; }
+.tag-page { background: rgba(255, 255, 255, 0.08); color: var(--text-muted); }
 
 .loading-state {
   display: flex;
@@ -1129,138 +1634,28 @@ select.form-input option {
   color: rgba(255, 255, 255, 0.2);
 }
 
-.data-overview {
-  max-width: 800px;
-  margin: 0 auto;
-}
-
-.overview-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 24px;
-}
-
-.overview-title {
-  font-size: 18px;
-  font-weight: 600;
-  color: var(--text-primary);
-}
-
-.overview-badge {
-  display: inline-block;
-  padding: 4px 12px;
-  border-radius: 12px;
-  font-size: 12px;
-  font-weight: 500;
-}
-
-.overview-badge.running { background: rgba(16, 185, 129, 0.12); color: #34d399; }
-.overview-badge.pending { background: rgba(76, 110, 245, 0.12); color: #7c8aff; }
-.overview-badge.completed { background: rgba(255, 255, 255, 0.05); color: rgba(255, 255, 255, 0.4); }
-.overview-badge.failed, .overview-badge.error { background: rgba(239, 68, 68, 0.12); color: #f87171; }
-
-.stats-grid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 16px;
-  margin-bottom: 24px;
-}
-
-.stat-card {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  padding: 20px;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid var(--border-color);
-  border-radius: 12px;
-}
-
-.stat-icon {
-  width: 48px;
-  height: 48px;
-  border-radius: 12px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.stat-icon.blue { background: rgba(76, 110, 245, 0.15); color: #7c8aff; }
-.stat-icon.green { background: rgba(16, 185, 129, 0.15); color: #34d399; }
-.stat-icon.yellow { background: rgba(251, 191, 36, 0.15); color: #fbbf24; }
-.stat-icon.purple { background: rgba(124, 58, 237, 0.15); color: #a78bfa; }
-
-.stat-icon svg { width: 24px; height: 24px; }
-
-.stat-info {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.stat-value {
-  font-size: 24px;
-  font-weight: 700;
-  color: var(--text-primary);
-}
-
-.stat-label {
-  font-size: 12px;
-  color: var(--text-muted);
-}
-
-.section-title {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text-secondary);
-  margin-bottom: 12px;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-
-.type-section, .time-section {
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  border-radius: 12px;
-  padding: 20px;
-  margin-bottom: 16px;
-}
-
-.type-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-}
-
-.type-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 16px;
-  background: rgba(255, 255, 255, 0.04);
-  border-radius: 8px;
-}
-
-.type-name {
-  font-size: 13px;
-  font-weight: 500;
-  color: rgba(255, 255, 255, 0.7);
-}
-
-.type-count {
-  font-size: 13px;
-  color: var(--text-muted);
-}
-
-.last-time {
-  font-size: 14px;
-  font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
-  color: var(--text-secondary);
-}
-
-@media (max-width: 768px) {
-  .stats-grid { grid-template-columns: 1fr; }
+@media (max-width: 960px) {
+  .preview-layout {
+    flex-direction: column;
+  }
+  .preview-sidebar {
+    flex: none;
+    width: 100%;
+    position: static;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: stretch;
+  }
+  .side-stat-card {
+    flex: 1;
+    min-width: 200px;
+  }
+  .btn-refresh-preview {
+    width: auto;
+    flex: 0 0 auto;
+    align-self: center;
+    padding: 9px 20px;
+  }
 }
 
 @media (max-width: 768px) {

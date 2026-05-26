@@ -361,16 +361,28 @@ def _save_crawled_data(items):
         if status == 'ERROR':
             status = 'FAILED'
         if task_id:
-            # 获取爬虫引擎的最终状态
+            # 优先使用爬虫线程完成时附带的快照，避免引擎单例被重置后读到 0
             engine_status = crawler_engine.get_status()
-            execution_time = engine_status.get('elapsed_seconds', 0)
-            data_count = engine_status.get('collected_count', 0)
-            error_message = engine_status.get('error_message', '')
-            
-            # 成功率：基于成功爬取的页数 / 总页数
-            total_pages = engine_status.get('total_pages', 1)
-            succeeded_pages = engine_status.get('succeeded_pages', 0)
-            success_rate = min(100.0, round((succeeded_pages / max(1, total_pages)) * 100, 2))
+            execution_time = items.get('execution_time')
+            if execution_time is None:
+                execution_time = engine_status.get('elapsed_seconds', 0)
+            data_count = items.get('collected_count')
+            if data_count is None:
+                data_count = engine_status.get('collected_count', 0)
+            error_message = items.get('error_message')
+            if error_message is None:
+                error_message = engine_status.get('error_message', '')
+
+            total_pages = items.get('total_pages') or engine_status.get('total_pages', 1)
+            succeeded_pages = items.get('succeeded_pages')
+            if succeeded_pages is None:
+                succeeded_pages = engine_status.get('succeeded_pages', 0)
+            success_rate = items.get('success_rate')
+            if success_rate is None:
+                success_rate = min(
+                    100.0,
+                    round((succeeded_pages / max(1, total_pages)) * 100, 2),
+                )
             
             # 更新任务统计信息（包含错误消息）
             task_db.update_task_stats(task_id, execution_time, data_count, success_rate, error_message)
@@ -395,7 +407,7 @@ def _save_crawled_data(items):
                     'success_rate': success_rate,
                     'error_message': error_message
                 }
-                task_db.save_task_version(task_id, config, f'执行结果: {status}, 数据: {data_count}条')
+                task_db.save_execution_record(task_id, config, status, data_count)
 
                 if status == 'COMPLETED':
                     system_db.add_log(level='INFO', source='crawler',
@@ -1015,15 +1027,22 @@ def task_update(task_id):
         if name:
             update_fields['name'] = name
         if config:
-            update_fields['config'] = config
-        
-        # 如果有更新字段则更新
+            existing_cfg = task.get('config') or {}
+            if isinstance(existing_cfg, str):
+                try:
+                    existing_cfg = json.loads(existing_cfg)
+                except (json.JSONDecodeError, TypeError):
+                    existing_cfg = {}
+            if not isinstance(config, dict):
+                config = {}
+            merged = {**existing_cfg, **config}
+            if '_last_execution' not in config and existing_cfg.get('_last_execution'):
+                merged['_last_execution'] = existing_cfg['_last_execution']
+            update_fields['config'] = merged
+
+        # 如果有更新字段则更新（配置保存不再写入「执行记录」，避免与真实运行混淆）
         if update_fields:
             task_db.update(task_id=task_id, **update_fields)
-            
-            # 如果更新了配置，创建新版本记录
-            if config:
-                task_db.save_task_version(task_id, config, '更新任务配置')
 
         return jsonify({'success': True, 'message': '更新任务成功'}), 200
 
@@ -1070,6 +1089,11 @@ def task_start(task_id):
             except (json.JSONDecodeError, TypeError):
                 config = {}
         target_url = (config.get('target_url') or task.get('target_url') or '').strip()
+
+        from datetime import datetime
+        config = dict(config) if isinstance(config, dict) else {}
+        config['last_run_started_at'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        task_db.update_task(task_id, config=config)
 
         crawl_options = _build_crawl_options(config)
         result = crawler_engine.start(
@@ -1134,6 +1158,26 @@ def task_stop(task_id):
     except Exception as e:
         return jsonify({
             'success': False, 'message': '停止任务失败', 'code': 'TASK_STOP_FAILED', 'error': str(e)
+        }), 500
+
+
+@app.route('/api/tasks/<task_id>/executions', methods=['GET'])
+@auth_service.login_required
+def task_executions(task_id):
+    """仅返回任务启动运行产生的执行记录（不含编辑配置产生的版本）"""
+    try:
+        task = task_db.get_by_id(task_id, user_id=request.user_id)
+        if not task:
+            return jsonify({
+                'success': False, 'message': '任务不存在', 'code': 'TASK_NOT_FOUND'
+            }), 404
+
+        records = task_db.get_task_executions(task_id)
+        return jsonify({'success': True, 'data': records}), 200
+
+    except Exception as e:
+        return jsonify({
+            'success': False, 'message': '获取执行记录失败', 'code': 'TASK_EXECUTIONS_FAILED', 'error': str(e)
         }), 500
 
 
@@ -1439,57 +1483,36 @@ def task_data_summary(task_id):
         if not task:
             return jsonify({'success': False, 'message': '任务不存在', 'code': 'TASK_NOT_FOUND'}), 404
 
-        conn = pymysql.connect(**{
-            'host': 'localhost', 'port': 3308, 'user': 'root',
-            'password': 'Pxc7890.', 'database': 'crawler_manager',
-            'charset': 'utf8mb4',
-            'cursorclass': pymysql.cursors.DictCursor
-        })
-        with conn.cursor() as cursor:
-            # 获取总数据量
-            cursor.execute(
-                "SELECT COUNT(*) AS total FROM `crawler_data` WHERE `task_id` = %(task_id)s",
-                {'task_id': task_id}
-            )
-            total_count = cursor.fetchone()["total"]
+        config = task.get('config') or {}
+        if isinstance(config, str):
+            try:
+                config = json.loads(config)
+            except (json.JSONDecodeError, TypeError):
+                config = {}
 
-            # 获取类型分布
-            cursor.execute(
-                "SELECT `type`, COUNT(*) AS cnt FROM `crawler_data` WHERE `task_id` = %(task_id)s GROUP BY `type`",
-                {'task_id': task_id}
-            )
-            type_distribution = {row['type']: row['cnt'] for row in cursor.fetchall()}
+        latest_only = request.args.get('latest_only', '1') in ('1', 'true', 'True')
+        since = config.get('last_run_started_at') if latest_only else None
 
-            # 获取最近采集时间
-            cursor.execute(
-                "SELECT MAX(`collected_at`) AS last_time FROM `crawler_data` WHERE `task_id` = %(task_id)s",
-                {'task_id': task_id}
-            )
-            last_time = cursor.fetchone()["last_time"]
-            if last_time:
-                last_time = last_time.strftime('%Y-%m-%d %H:%M:%S')
-
-            # 获取今日数据量
-            cursor.execute(
-                "SELECT COUNT(*) AS today_count FROM `crawler_data` WHERE `task_id` = %(task_id)s AND DATE(`collected_at`) = CURDATE()",
-                {'task_id': task_id}
-            )
-            today_count = cursor.fetchone()["today_count"]
-
-        conn.close()
+        stats = crawler_db.get_task_data_stats(task_id, since=since)
+        all_stats = crawler_db.get_task_data_stats(task_id, since=None) if since else stats
 
         return jsonify({
             'success': True,
             'data': {
                 'task_id': task_id,
                 'task_name': task.get('name', ''),
-                'total_count': total_count,
-                'today_count': today_count,
-                'type_distribution': type_distribution,
-                'last_collected_at': last_time,
-                'data_count': task.get('data_count', 0),  # 任务表中的记录数
+                'total_count': stats['total_count'],
+                'all_time_count': all_stats['total_count'],
+                'today_count': stats['total_count'] if since else stats['total_count'],
+                'type_distribution': stats['type_distribution'],
+                'last_collected_at': stats['last_collected_at'],
+                'last_run_started_at': config.get('last_run_started_at'),
+                'latest_only': latest_only,
+                'data_count': task.get('data_count', 0),
                 'execution_time': task.get('execution_time', 0),
-                'success_rate': task.get('success_rate', 0)
+                'success_rate': float(task.get('success_rate') or 0),
+                'task_status': (task.get('status') or '').lower(),
+                'error_message': task.get('error_message') or '',
             }
         }), 200
     except Exception as e:
@@ -1509,6 +1532,7 @@ def get_data_list():
         date_to = request.args.get('date_to', '', type=str)
         sort_field = request.args.get('sort_field', '', type=str)
         sort_order = request.args.get('sort_order', 'desc', type=str)
+        since = request.args.get('since', '', type=str).strip() or None
 
         if page < 1:
             page = 1
@@ -1525,6 +1549,7 @@ def get_data_list():
             date_to=date_to.strip() if date_to else None,
             sort_field=sort_field.strip() if sort_field else None,
             sort_order=sort_order,
+            since=since,
         )
 
         return jsonify({

@@ -146,7 +146,7 @@ class CrawlerDB:
 
     def get_list(self, page=1, page_size=20, keyword="", task_id=None,
                  data_type=None, date_from=None, date_to=None,
-                 sort_field=None, sort_order="desc"):
+                 sort_field=None, sort_order="desc", since=None):
         """
         分页查询爬取数据
         """
@@ -179,6 +179,10 @@ class CrawlerDB:
                 if date_to:
                     conditions.append("DATE(`collected_at`) <= %(date_to)s")
                     params["date_to"] = date_to
+
+                if since:
+                    conditions.append("`collected_at` >= %(since)s")
+                    params["since"] = since
 
                 where = ""
                 if conditions:
@@ -219,6 +223,59 @@ class CrawlerDB:
         except pymysql.Error as e:
             print(f"查询数据失败: {e}")
             return [], 0
+        finally:
+            if conn:
+                conn.close()
+
+    def get_task_data_stats(self, task_id, since=None):
+        """任务数据概览（可选仅统计某次执行之后的数据）"""
+        conn = None
+        try:
+            conn = pymysql.connect(**self._config)
+            with conn.cursor() as cursor:
+                conditions = ["`task_id` = %(task_id)s"]
+                params = {"task_id": task_id}
+                if since:
+                    conditions.append("`collected_at` >= %(since)s")
+                    params["since"] = since
+                where = "WHERE " + " AND ".join(conditions)
+
+                cursor.execute(
+                    "SELECT COUNT(*) AS total FROM `crawler_data` {}".format(where),
+                    params,
+                )
+                total_count = cursor.fetchone()["total"]
+
+                cursor.execute(
+                    "SELECT `type`, COUNT(*) AS cnt FROM `crawler_data` {} GROUP BY `type`".format(
+                        where
+                    ),
+                    params,
+                )
+                type_distribution = {row["type"]: row["cnt"] for row in cursor.fetchall()}
+
+                cursor.execute(
+                    "SELECT MAX(`collected_at`) AS last_time FROM `crawler_data` {}".format(
+                        where
+                    ),
+                    params,
+                )
+                last_time = cursor.fetchone()["last_time"]
+                if last_time:
+                    last_time = last_time.strftime("%Y-%m-%d %H:%M:%S")
+
+                return {
+                    "total_count": total_count,
+                    "type_distribution": type_distribution,
+                    "last_collected_at": last_time,
+                }
+        except pymysql.Error as e:
+            print(f"任务数据统计失败: {e}")
+            return {
+                "total_count": 0,
+                "type_distribution": {},
+                "last_collected_at": None,
+            }
         finally:
             if conn:
                 conn.close()
