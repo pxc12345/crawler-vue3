@@ -685,8 +685,8 @@ watch(activeTab, (val) => {
 }
 
 .tab-btn.active {
-  background: rgba(76, 110, 245, 0.15);
-  color: #7c8aff;
+  background: rgba(var(--accent-rgb), 0.15);
+  color: var(--active-color);
   font-weight: 600;
 }
 
@@ -836,7 +836,7 @@ watch(activeTab, (val) => {
 }
 
 .auto-scroll-label input {
-  accent-color: #4c6ef5;
+  accent-color: var(--accent-primary);
 }
 
 .btn-clear-log {
@@ -886,13 +886,13 @@ watch(activeTab, (val) => {
   font-weight: 600;
 }
 
-.log-level.info { color: #7c8aff; }
+.log-level.info { color: var(--active-color); }
 .log-level.warn { color: #fbbf24; }
 .log-level.error { color: #f87171; }
 
 .log-msg { color: var(--text-secondary); }
 
-.log-msg :deep(.kw) { color: #7c8aff; }
+.log-msg :deep(.kw) { color: var(--active-color); }
 .log-msg :deep(.err) { color: #f87171; }
 
 .log-line.error .log-msg { color: #f87171; }

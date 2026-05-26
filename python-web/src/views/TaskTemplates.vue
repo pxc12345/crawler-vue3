@@ -405,8 +405,8 @@ onMounted(() => {
 
 .template-icon {
   width: 44px; height: 44px; border-radius: 12px;
-  background: rgba(76, 110, 245, 0.12);
-  color: #7c8aff;
+  background: rgba(var(--accent-rgb), 0.12);
+  color: var(--active-color);
   display: flex; align-items: center; justify-content: center;
   flex-shrink: 0;
 }

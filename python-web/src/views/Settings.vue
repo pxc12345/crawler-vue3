@@ -428,13 +428,14 @@ async function saveCrawlerConfig() {
 // --- Theme ---
 function getThemePreviewBg(key) {
   const bgColors = {
+    'pure-black': '#050505',
     default: '#0d1117',
-    'space-gray': '#161b22',
+    'space-gray': '#0f172a',
     'ice-blue': '#0c1119',
-    'night-green': '#0d1210',
+    'night-green': '#1c1412',
     'purple-gold': '#0f0d14',
     'cyber-aurora': '#0a0e17',
-    'pure-black': '#080808'
+    'pure-black': '#050505'
   }
   return bgColors[key] || '#0d1117'
 }

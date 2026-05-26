@@ -9,14 +9,16 @@
   --accent-secondary: #7c3aed;
   --accent-rgb: 76, 110, 245;
   --gradient-primary: linear-gradient(135deg, #4c6ef5, #7c3aed);
+  --btn-shadow: 0 2px 12px rgba(76, 110, 245, 0.3);
   --btn-hover-shadow: 0 4px 20px rgba(76, 110, 245, 0.45);
   --card-hover-bg: rgba(76, 110, 245, 0.06);
-  --active-color: #7c8aff;
+  --active-color: #ffffff;
   --active-bg: rgba(76, 110, 245, 0.12);
   --logo-gradient: linear-gradient(135deg, #4c6ef5, #7c3aed);
   --glow-color: rgba(76, 110, 245, 0.06);
   --glow-color-2: rgba(124, 58, 237, 0.04);
   --avatar-bg: linear-gradient(135deg, #4c6ef5, #7c3aed);
+  --btn-text-color: #ffffff;
 
   --primary-50: #f0f5ff;
   --primary-100: #e0ebff;
@@ -198,8 +200,8 @@ body {
 
 .btn-primary {
   background: var(--gradient-primary);
-  color: white;
-  box-shadow: 0 4px 14px rgba(76, 110, 245, 0.4);
+  color: var(--btn-text-color, #ffffff);
+  box-shadow: var(--btn-hover-shadow);
 }
 
 .btn-primary:hover {
@@ -393,4 +395,18 @@ body {
   height: 64px;
   object-fit: contain;
   border-radius: 12px;
+}
+
+.user-avatar {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: var(--avatar-bg);
+  color: var(--btn-text-color, #ffffff);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 700;
+  flex-shrink: 0;
 }

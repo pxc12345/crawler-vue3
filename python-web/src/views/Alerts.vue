@@ -336,10 +336,10 @@ onMounted(() => {
   padding: 10px 20px;
   font-size: 13px;
   font-weight: 600;
-  background: rgba(76, 110, 245, 0.12);
-  border: 1px solid rgba(76, 110, 245, 0.2);
+  background: rgba(var(--accent-rgb), 0.12);
+  border: 1px solid rgba(var(--accent-rgb), 0.2);
   border-radius: 10px;
-  color: #7c8aff;
+  color: var(--active-color);
   cursor: pointer;
   transition: all 0.25s ease;
 }
@@ -397,7 +397,7 @@ onMounted(() => {
   cursor: pointer;
 }
 
-.read-toggle input { accent-color: #4c6ef5; }
+.read-toggle input { accent-color: var(--accent-primary); }
 
 .skeleton-list { display: flex; flex-direction: column; gap: 12px; }
 .skeleton-card {
@@ -478,7 +478,7 @@ onMounted(() => {
 
 .icon-task_failed { background: rgba(239, 68, 68, 0.12); color: #f87171; }
 .icon-timeout { background: rgba(245, 158, 11, 0.12); color: #fbbf24; }
-.icon-data_error { background: rgba(99, 102, 241, 0.12); color: #818cf8; }
+.icon-data_error { background: rgba(var(--accent-rgb), 0.12); color: var(--accent-primary); }
 .icon-ip_blocked { background: rgba(239, 68, 68, 0.12); color: #f87171; }
 
 .alert-info { flex: 1; min-width: 0; }
@@ -554,10 +554,10 @@ onMounted(() => {
 .detail-btn:hover { background: rgba(255, 255, 255, 0.08); color: rgba(255, 255, 255, 0.75); }
 
 .detail-btn.primary {
-  background: rgba(76, 110, 245, 0.15);
-  color: #7c8aff; border-color: rgba(76, 110, 245, 0.2);
+  background: rgba(var(--accent-rgb), 0.15);
+  color: var(--active-color); border-color: rgba(var(--accent-rgb), 0.2);
 }
-.detail-btn.primary:hover { background: rgba(76, 110, 245, 0.22); }
+.detail-btn.primary:hover { background: rgba(var(--accent-rgb), 0.22); }
 
 .pagination {
   display: flex; justify-content: center; align-items: center;

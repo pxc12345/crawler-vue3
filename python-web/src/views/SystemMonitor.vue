@@ -288,7 +288,7 @@ onUnmounted(() => {
   color: rgba(255,255,255,0.3); transition: color 0.3s ease;
 }
 .refresh-tag svg { width: 14px; height: 14px; }
-.refresh-tag.refreshing { color: #7c8aff; }
+.refresh-tag.refreshing { color: var(--active-color); }
 .refresh-tag.refreshing svg { animation: spin 0.8s linear; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .gauges-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; margin-bottom: 20px; }
@@ -372,16 +372,16 @@ onUnmounted(() => {
   color: rgba(255,255,255,0.35); margin-bottom: 6px;
 }
 .slider {
-  width: 100%; accent-color: #4c6ef5; cursor: pointer;
+  width: 100%; accent-color: var(--accent-primary); cursor: pointer;
 }
 .threshold-val {
   display: inline-block; margin-top: 4px;
-  font-size: 13px; font-weight: 600; color: #7c8aff;
+  font-size: 13px; font-weight: 600; color: var(--active-color);
 }
 .btn-save-threshold {
   padding: 10px 24px; font-size: 13px; font-weight: 600;
   background: var(--gradient-primary);
-  border: none; border-radius: 10px; color: #fff; cursor: pointer;
+  border: none; border-radius: 10px; color: var(--btn-text-color, #fff); cursor: pointer;
   transition: all 0.25s ease; box-shadow: 0 2px 12px rgba(var(--accent-rgb), 0.3);
 }
 .btn-save-threshold:hover { transform: translateY(-1px); box-shadow: 0 4px 20px rgba(var(--accent-rgb), 0.45); }

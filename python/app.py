@@ -2070,7 +2070,7 @@ def user_theme_save():
         data = request.get_json()
         theme_name = data.get('theme', 'default')
 
-        valid_themes = ['default', 'space-gray', 'ice-blue', 'night-green', 'purple-gold', 'cyber-aurora', 'pure-black']
+        valid_themes = ['pure-black', 'default', 'space-gray', 'ice-blue', 'night-green', 'purple-gold', 'cyber-aurora']
         if theme_name not in valid_themes:
             return jsonify({
                 'success': False, 'message': '无效的主题名称', 'code': 'INVALID_THEME'
