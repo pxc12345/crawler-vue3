@@ -5,6 +5,14 @@ export const dataAPI = {
     return api.get('/data', { params })
   },
 
+  deleteData(id) {
+    return api.delete(`/data/${id}`)
+  },
+
+  batchDeleteData(ids) {
+    return api.post('/data/batch-delete', { ids })
+  },
+
   cleanData(data) {
     return api.post('/data/clean', data)
   },

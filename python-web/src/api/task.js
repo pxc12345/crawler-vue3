@@ -29,12 +29,16 @@ export const taskAPI = {
     return api.post(`/tasks/${id}/stop`)
   },
 
-  getTemplates() {
-    return api.get('/tasks/templates')
+  getTemplates(params) {
+    return api.get('/tasks/templates', { params })
   },
 
   createTemplate(data) {
     return api.post('/tasks/templates', data)
+  },
+
+  updateTemplate(id, data) {
+    return api.put(`/tasks/templates/${id}`, data)
   },
 
   deleteTemplate(id) {
@@ -43,6 +47,14 @@ export const taskAPI = {
 
   getTemplateById(id) {
     return api.get(`/tasks/templates/${id}`)
+  },
+
+  useTemplate(id) {
+    return api.post(`/tasks/templates/${id}/use`)
+  },
+
+  toggleTemplateFavorite(id) {
+    return api.post(`/tasks/templates/${id}/favorite`)
   },
 
   getVersions(taskId) {

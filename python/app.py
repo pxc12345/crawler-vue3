@@ -596,7 +596,14 @@ def crawler_data_export():
 
 @app.route('/api/health', methods=['GET'])
 def health_check():
-    return jsonify({'success': True, 'message': 'Server is running'}), 200
+    return jsonify({
+        'success': True,
+        'message': 'Server is running',
+        'template_api': 'v2',
+        'template_features': ['PUT', 'use', 'favorite', 'category', 'full_config'],
+        'data_api': 'v2',
+        'data_features': ['delete', 'batch_delete', 'filter', 'sort']
+    }), 200
 
 
 # ==================== Task Management Routes ====================
@@ -685,6 +692,240 @@ def task_create():
     except Exception as e:
         return jsonify({
             'success': False, 'message': '创建任务失败', 'code': 'TASK_CREATE_FAILED', 'error': str(e)
+        }), 500
+
+
+def _normalize_template_config(config):
+    """合并并规范化模板配置字段"""
+    if not isinstance(config, dict):
+        config = {}
+    interval_seconds = config.get('interval_seconds')
+    if interval_seconds is None and config.get('interval') is not None:
+        raw = config.get('interval')
+        interval_seconds = int(raw / 1000) if raw and raw > 60 else raw
+    max_retries = config.get('max_retries')
+    if max_retries is None:
+        max_retries = config.get('maxRetries', 3)
+    return {
+        'target_url': (config.get('target_url') or '').strip(),
+        'cron_expr': config.get('cron_expr') or '*/30 * * * *',
+        'interval_seconds': int(interval_seconds or 3),
+        'concurrency': int(config.get('concurrency') or 1),
+        'max_retries': int(max_retries or 0),
+        'maxRetries': int(max_retries or 0),
+        'retry_interval': int(config.get('retry_interval') or 60),
+        'crawl_mode': (config.get('crawl_mode') or 'link').strip().lower(),
+        'total_pages': int(config.get('total_pages') or 1),
+        'headers': config.get('headers') or {},
+        'proxy_group': (config.get('proxy_group') or '').strip(),
+        'task_type': (config.get('task_type') or 'crawler').strip(),
+    }
+
+
+# ==================== Task Template Routes（须在 /api/tasks/<task_id> 之前注册）====================
+
+@app.route('/api/tasks/templates', methods=['GET'])
+@auth_service.login_required
+def task_template_list():
+    try:
+        category = request.args.get('category', '', type=str)
+        favorite_only = request.args.get('favorite_only', '0') in ('1', 'true', 'True')
+        templates = task_db.get_templates(
+            user_id=request.user_id,
+            category=category.strip(),
+            favorite_only=favorite_only
+        )
+
+        return jsonify({'success': True, 'data': templates}), 200
+
+    except Exception as e:
+        return jsonify({
+            'success': False, 'message': '获取模板列表失败', 'code': 'TEMPLATE_LIST_FAILED', 'error': str(e)
+        }), 500
+
+
+@app.route('/api/tasks/templates', methods=['POST'])
+@auth_service.login_required
+def task_template_create():
+    try:
+        data = request.get_json() or {}
+        name = (data.get('name') or '').strip()
+        description = (data.get('description') or '').strip()
+        category = (data.get('category') or 'general').strip()
+        is_favorite = bool(data.get('is_favorite'))
+        config = _normalize_template_config(data.get('config') or {})
+
+        if not name:
+            return jsonify({
+                'success': False, 'message': '请输入模板名称', 'code': 'MISSING_NAME'
+            }), 400
+
+        template_id, err = task_db.create_template(
+            name=name,
+            description=description,
+            config=config,
+            user_id=request.user_id,
+            category=category,
+            is_favorite=is_favorite
+        )
+        if err:
+            return jsonify({
+                'success': False, 'message': err, 'code': 'TEMPLATE_CREATE_FAILED'
+            }), 400
+
+        return jsonify({
+            'success': True, 'message': '创建模板成功', 'data': {'template_id': template_id}
+        }), 201
+
+    except Exception as e:
+        return jsonify({
+            'success': False, 'message': '创建模板失败', 'code': 'TEMPLATE_CREATE_FAILED', 'error': str(e)
+        }), 500
+
+
+@app.route('/api/tasks/templates/<template_id>/use', methods=['POST'])
+@auth_service.login_required
+def task_template_use(template_id):
+    try:
+        template = task_db.get_template_by_id(template_id, user_id=request.user_id)
+        if not template:
+            return jsonify({
+                'success': False, 'message': '模板不存在', 'code': 'TEMPLATE_NOT_FOUND'
+            }), 404
+
+        task_db.increment_template_use_count(template_id, user_id=request.user_id)
+        template = task_db.get_template_by_id(template_id, user_id=request.user_id)
+        return jsonify({
+            'success': True, 'message': '已应用模板', 'data': template
+        }), 200
+
+    except Exception as e:
+        return jsonify({
+            'success': False, 'message': '应用模板失败', 'code': 'TEMPLATE_USE_FAILED', 'error': str(e)
+        }), 500
+
+
+@app.route('/api/tasks/templates/<template_id>/favorite', methods=['POST'])
+@auth_service.login_required
+def task_template_toggle_favorite(template_id):
+    try:
+        template = task_db.get_template_by_id(template_id, user_id=request.user_id)
+        if not template:
+            return jsonify({
+                'success': False, 'message': '模板不存在', 'code': 'TEMPLATE_NOT_FOUND'
+            }), 404
+
+        new_fav = not bool(template.get('is_favorite'))
+        success, msg = task_db.update_template(
+            template_id, user_id=request.user_id, is_favorite=new_fav
+        )
+        if not success:
+            return jsonify({
+                'success': False, 'message': msg or '操作失败', 'code': 'TEMPLATE_FAVORITE_FAILED'
+            }), 400
+
+        return jsonify({
+            'success': True,
+            'message': '已设为常用模板' if new_fav else '已取消常用',
+            'data': {'is_favorite': new_fav}
+        }), 200
+
+    except Exception as e:
+        return jsonify({
+            'success': False, 'message': '操作失败', 'code': 'TEMPLATE_FAVORITE_FAILED', 'error': str(e)
+        }), 500
+
+
+@app.route('/api/tasks/templates/<template_id>', methods=['GET'])
+@auth_service.login_required
+def task_template_detail(template_id):
+    try:
+        template = task_db.get_template_by_id(template_id, user_id=request.user_id)
+
+        if not template:
+            return jsonify({
+                'success': False, 'message': '模板不存在', 'code': 'TEMPLATE_NOT_FOUND'
+            }), 404
+
+        return jsonify({'success': True, 'data': template}), 200
+
+    except Exception as e:
+        return jsonify({
+            'success': False, 'message': '获取模板详情失败', 'code': 'TEMPLATE_DETAIL_FAILED', 'error': str(e)
+        }), 500
+
+
+@app.route('/api/tasks/templates/<template_id>', methods=['PUT'])
+@auth_service.login_required
+def task_template_update(template_id):
+    try:
+        template = task_db.get_template_by_id(template_id, user_id=request.user_id)
+        if not template:
+            return jsonify({
+                'success': False, 'message': '模板不存在', 'code': 'TEMPLATE_NOT_FOUND'
+            }), 404
+
+        data = request.get_json() or {}
+        update_fields = {}
+        if 'name' in data:
+            name = (data.get('name') or '').strip()
+            if not name:
+                return jsonify({
+                    'success': False, 'message': '请输入模板名称', 'code': 'MISSING_NAME'
+                }), 400
+            update_fields['name'] = name
+        if 'description' in data:
+            update_fields['description'] = (data.get('description') or '').strip()
+        if 'category' in data:
+            update_fields['category'] = (data.get('category') or 'general').strip()
+        if 'is_favorite' in data:
+            update_fields['is_favorite'] = bool(data.get('is_favorite'))
+        if 'config' in data:
+            update_fields['config'] = _normalize_template_config(data.get('config') or {})
+
+        if not update_fields:
+            return jsonify({
+                'success': False, 'message': '没有可更新的字段', 'code': 'TEMPLATE_NOTHING_TO_UPDATE'
+            }), 400
+
+        success, msg = task_db.update_template(template_id, user_id=request.user_id, **update_fields)
+        if not success:
+            return jsonify({
+                'success': False, 'message': msg or '更新模板失败', 'code': 'TEMPLATE_UPDATE_FAILED'
+            }), 400
+
+        updated = task_db.get_template_by_id(template_id, user_id=request.user_id)
+        return jsonify({
+            'success': True, 'message': '更新模板成功', 'data': updated
+        }), 200
+
+    except Exception as e:
+        return jsonify({
+            'success': False, 'message': '更新模板失败', 'code': 'TEMPLATE_UPDATE_FAILED', 'error': str(e)
+        }), 500
+
+
+@app.route('/api/tasks/templates/<template_id>', methods=['DELETE'])
+@auth_service.login_required
+def task_template_delete(template_id):
+    try:
+        template = task_db.get_template_by_id(template_id, user_id=request.user_id)
+        if not template:
+            return jsonify({
+                'success': False, 'message': '模板不存在', 'code': 'TEMPLATE_NOT_FOUND'
+            }), 404
+
+        success, msg = task_db.delete_template(template_id, user_id=request.user_id)
+        if not success:
+            return jsonify({
+                'success': False, 'message': msg or '删除模板失败', 'code': 'TEMPLATE_DELETE_FAILED'
+            }), 400
+
+        return jsonify({'success': True, 'message': '删除模板成功'}), 200
+
+    except Exception as e:
+        return jsonify({
+            'success': False, 'message': '删除模板失败', 'code': 'TEMPLATE_DELETE_FAILED', 'error': str(e)
         }), 500
 
 
@@ -847,90 +1088,6 @@ def task_stop(task_id):
     except Exception as e:
         return jsonify({
             'success': False, 'message': '停止任务失败', 'code': 'TASK_STOP_FAILED', 'error': str(e)
-        }), 500
-
-
-@app.route('/api/tasks/templates', methods=['GET'])
-@auth_service.login_required
-def task_template_list():
-    try:
-        templates = task_db.get_templates(user_id=request.user_id)
-
-        return jsonify({'success': True, 'data': templates}), 200
-
-    except Exception as e:
-        return jsonify({
-            'success': False, 'message': '获取模板列表失败', 'code': 'TEMPLATE_LIST_FAILED', 'error': str(e)
-        }), 500
-
-
-@app.route('/api/tasks/templates', methods=['POST'])
-@auth_service.login_required
-def task_template_create():
-    try:
-        data = request.get_json()
-        name = (data.get('name') or '').strip()
-        config = data.get('config', {})
-        description = (data.get('description') or '').strip()
-
-        if not name:
-            return jsonify({
-                'success': False, 'message': '请输入模板名称', 'code': 'MISSING_NAME'
-            }), 400
-
-        template_id = task_db.create_template(
-            name=name,
-            description=description,
-            config=config,
-            user_id=request.user_id
-        )
-
-        return jsonify({
-            'success': True, 'message': '创建模板成功', 'data': {'template_id': template_id}
-        }), 201
-
-    except Exception as e:
-        return jsonify({
-            'success': False, 'message': '创建模板失败', 'code': 'TEMPLATE_CREATE_FAILED', 'error': str(e)
-        }), 500
-
-
-@app.route('/api/tasks/templates/<template_id>', methods=['GET'])
-@auth_service.login_required
-def task_template_detail(template_id):
-    try:
-        template = task_db.get_template_by_id(template_id, user_id=request.user_id)
-
-        if not template:
-            return jsonify({
-                'success': False, 'message': '模板不存在', 'code': 'TEMPLATE_NOT_FOUND'
-            }), 404
-
-        return jsonify({'success': True, 'data': template}), 200
-
-    except Exception as e:
-        return jsonify({
-            'success': False, 'message': '获取模板详情失败', 'code': 'TEMPLATE_DETAIL_FAILED', 'error': str(e)
-        }), 500
-
-
-@app.route('/api/tasks/templates/<template_id>', methods=['DELETE'])
-@auth_service.login_required
-def task_template_delete(template_id):
-    try:
-        template = task_db.get_template_by_id(template_id, user_id=request.user_id)
-        if not template:
-            return jsonify({
-                'success': False, 'message': '模板不存在', 'code': 'TEMPLATE_NOT_FOUND'
-            }), 404
-
-        task_db.delete_template(template_id, user_id=request.user_id)
-
-        return jsonify({'success': True, 'message': '删除模板成功'}), 200
-
-    except Exception as e:
-        return jsonify({
-            'success': False, 'message': '删除模板失败', 'code': 'TEMPLATE_DELETE_FAILED', 'error': str(e)
         }), 500
 
 
@@ -1301,6 +1458,10 @@ def get_data_list():
         page_size = request.args.get('page_size', 20, type=int)
         keyword = request.args.get('keyword', '', type=str)
         task_id = request.args.get('task_id', '', type=str)
+        data_type = request.args.get('type', '', type=str)
+        date_from = request.args.get('date_from', '', type=str)
+        date_to = request.args.get('date_to', '', type=str)
+        sort_field = request.args.get('sort_field', '', type=str)
         sort_order = request.args.get('sort_order', 'desc', type=str)
 
         if page < 1:
@@ -1311,8 +1472,13 @@ def get_data_list():
         rows, total = crawler_db.get_list(
             page=page,
             page_size=page_size,
-            keyword=keyword,
-            task_id=int(task_id) if task_id else None
+            keyword=keyword.strip(),
+            task_id=int(task_id) if task_id else None,
+            data_type=data_type.strip() if data_type else None,
+            date_from=date_from.strip() if date_from else None,
+            date_to=date_to.strip() if date_to else None,
+            sort_field=sort_field.strip() if sort_field else None,
+            sort_order=sort_order,
         )
 
         return jsonify({
@@ -1326,6 +1492,57 @@ def get_data_list():
         }), 200
     except Exception as e:
         return jsonify({'success': False, 'message': '获取数据列表失败', 'error': str(e)}), 500
+
+
+@app.route('/api/data/<int:record_id>', methods=['DELETE'])
+@auth_service.login_required
+def delete_data_record(record_id):
+    try:
+        success, msg = crawler_db.delete_by_id(record_id)
+        if not success:
+            return jsonify({
+                'success': False, 'message': msg or '删除失败', 'code': 'DATA_DELETE_FAILED'
+            }), 404
+        return jsonify({'success': True, 'message': '删除成功'}), 200
+    except Exception as e:
+        return jsonify({
+            'success': False, 'message': '删除失败', 'code': 'DATA_DELETE_FAILED', 'error': str(e)
+        }), 500
+
+
+@app.route('/api/data/batch-delete', methods=['POST'])
+@auth_service.login_required
+def batch_delete_data_records():
+    try:
+        data = request.get_json() or {}
+        ids = data.get('ids', [])
+        if not isinstance(ids, list) or not ids:
+            return jsonify({
+                'success': False, 'message': '请选择要删除的数据', 'code': 'MISSING_IDS'
+            }), 400
+        try:
+            id_list = [int(i) for i in ids]
+        except (TypeError, ValueError):
+            return jsonify({
+                'success': False, 'message': '无效的数据ID', 'code': 'INVALID_IDS'
+            }), 400
+
+        deleted, err = crawler_db.delete_by_ids(id_list)
+        if err:
+            return jsonify({
+                'success': False, 'message': err, 'code': 'DATA_BATCH_DELETE_FAILED'
+            }), 400
+
+        return jsonify({
+            'success': True,
+            'message': f'已删除 {deleted} 条数据',
+            'data': {'deleted': deleted}
+        }), 200
+    except Exception as e:
+        return jsonify({
+            'success': False, 'message': '批量删除失败', 'code': 'DATA_BATCH_DELETE_FAILED', 'error': str(e)
+        }), 500
+
 
 @app.route('/api/data/preview', methods=['GET'])
 @auth_service.login_required

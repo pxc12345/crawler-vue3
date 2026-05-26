@@ -11,6 +11,29 @@
         <h1 class="new-title">新建任务</h1>
       </div>
 
+      <div class="template-bar">
+        <label class="form-label">从模板创建</label>
+        <div class="template-bar-row">
+          <select v-model="selectedTemplateId" class="form-input template-select" @change="onTemplateSelect">
+            <option value="">不使用模板（手动填写）</option>
+            <option v-for="t in templateList" :key="t.id" :value="String(t.id)">
+              {{ t.isFavorite ? '★ ' : '' }}{{ t.name }}（{{ t.categoryLabel }}）
+            </option>
+          </select>
+          <button
+            type="button"
+            class="btn-apply-template"
+            :disabled="!selectedTemplateId || applyingTemplate"
+            @click="applySelectedTemplate"
+          >
+            {{ applyingTemplate ? '加载中...' : '应用模板' }}
+          </button>
+        </div>
+        <p v-if="appliedTemplateName" class="template-applied-hint">
+          已应用模板：{{ appliedTemplateName }}
+        </p>
+      </div>
+
       <div class="config-form">
         <div class="form-row">
           <div class="form-group full">
@@ -30,18 +53,28 @@
             <input v-model.number="form.intervalMinutes" type="number" class="form-input" placeholder="例如：30" min="1" />
           </div>
           <div class="form-group">
-            <label class="form-label">并发数</label>
-            <input v-model.number="form.concurrency" type="number" class="form-input" placeholder="1" min="1" />
+            <label class="form-label">爬取页数</label>
+            <input v-model.number="form.totalPages" type="number" class="form-input" min="1" max="100" />
           </div>
         </div>
         <div class="form-row">
           <div class="form-group">
-            <label class="form-label">请求间隔 (秒)</label>
-            <input v-model.number="form.intervalSeconds" type="number" class="form-input" placeholder="3" min="1" />
+            <label class="form-label">并发数</label>
+            <input v-model.number="form.concurrency" type="number" class="form-input" placeholder="1" min="1" />
           </div>
+          <div class="form-group">
+            <label class="form-label">请求间隔 (秒)</label>
+            <input v-model.number="form.intervalSeconds" type="number" class="form-input" placeholder="3" min="1" max="60" />
+          </div>
+        </div>
+        <div class="form-row">
           <div class="form-group">
             <label class="form-label">最大重试次数</label>
             <input v-model.number="form.maxRetries" type="number" class="form-input" placeholder="3" min="0" />
+          </div>
+          <div class="form-group">
+            <label class="form-label">重试间隔 (秒)</label>
+            <input v-model.number="form.retryInterval" type="number" class="form-input" min="1" />
           </div>
         </div>
         <div class="form-row">
@@ -66,6 +99,18 @@
         </div>
         <div class="form-row">
           <div class="form-group full">
+            <label class="form-label">代理组</label>
+            <input v-model="form.proxyGroup" type="text" class="form-input" placeholder="留空则不使用代理组" />
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group full">
+            <label class="form-label">请求头 (JSON，可选)</label>
+            <textarea v-model="form.headers" class="form-textarea" rows="3" placeholder='{"User-Agent": "..."}'></textarea>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group full">
             <label class="form-label">描述（可选）</label>
             <input v-model="form.description" type="text" class="form-input" placeholder="任务描述" />
           </div>
@@ -83,14 +128,24 @@
 </template>
 
 <script setup>
-import { ref, reactive } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, reactive, onMounted } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import NavBar from '../components/NavBar.vue'
 import { taskAPI } from '../api/task'
+import {
+  categoryLabel,
+  buildTemplateConfig,
+  applyTemplateToTaskForm
+} from '../utils/templateConfig'
 
 const router = useRouter()
+const route = useRoute()
 const creating = ref(false)
+const applyingTemplate = ref(false)
+const templateList = ref([])
+const selectedTemplateId = ref('')
+const appliedTemplateName = ref('')
 
 const form = reactive({
   name: '',
@@ -100,13 +155,71 @@ const form = reactive({
   concurrency: 1,
   intervalSeconds: 3,
   maxRetries: 3,
+  retryInterval: 60,
   crawlMode: 'link',
+  totalPages: 1,
+  proxyGroup: '',
+  headers: '',
   description: ''
 })
 
-function minutesToCron(minutes) {
-  if (!minutes || minutes < 1) return '*/30 * * * *'
-  return `*/${minutes} * * * *`
+async function loadTemplateList() {
+  try {
+    const res = await taskAPI.getTemplates()
+    if (res.data.success) {
+      templateList.value = (res.data.data || []).map(item => ({
+        id: item.id,
+        name: item.name,
+        isFavorite: item.is_favorite === 1 || item.is_favorite === true,
+        categoryLabel: categoryLabel(item.category || 'general'),
+        config: item.config
+      }))
+    }
+  } catch (e) {
+    console.error('加载模板列表失败', e)
+  }
+}
+
+async function loadAndApplyTemplate(templateId, showMessage = true) {
+  if (!templateId) return
+  applyingTemplate.value = true
+  try {
+    const res = await taskAPI.getTemplateById(templateId)
+    if (res.data.success) {
+      const tmpl = res.data.data
+      applyTemplateToTaskForm(form, tmpl.config, {
+        name: tmpl.name,
+        description: tmpl.description
+      })
+      appliedTemplateName.value = tmpl.name
+      selectedTemplateId.value = String(templateId)
+      if (showMessage) {
+        ElMessage.success(`已应用模板「${tmpl.name}」的配置`)
+      }
+      await taskAPI.useTemplate(templateId).catch(() => {})
+    } else {
+      ElMessage.error(res.data.message || '加载模板失败')
+    }
+  } catch (e) {
+    ElMessage.error('加载模板失败')
+  } finally {
+    applyingTemplate.value = false
+  }
+}
+
+function onTemplateSelect() {
+  if (!selectedTemplateId.value) {
+    appliedTemplateName.value = ''
+    return
+  }
+}
+
+async function applySelectedTemplate() {
+  if (!selectedTemplateId.value) {
+    ElMessage.warning('请先选择模板')
+    return
+  }
+  await loadAndApplyTemplate(selectedTemplateId.value, true)
 }
 
 async function createTask() {
@@ -121,20 +234,14 @@ async function createTask() {
 
   creating.value = true
   try {
-    const config = {
-      target_url: form.targetUrl,
-      cron_expr: minutesToCron(form.intervalMinutes),
-      concurrency: form.concurrency,
-      interval_seconds: form.intervalSeconds,
-      max_retries: form.maxRetries,
-      crawl_mode: form.crawlMode
-    }
+    const config = buildTemplateConfig(form)
 
     const res = await taskAPI.createTask({
       name: form.name,
       task_type: form.taskType,
       config: config,
-      description: form.description
+      description: form.description,
+      template_id: selectedTemplateId.value ? Number(selectedTemplateId.value) : undefined
     })
 
     if (res.data.success) {
@@ -150,6 +257,15 @@ async function createTask() {
     creating.value = false
   }
 }
+
+onMounted(async () => {
+  await loadTemplateList()
+  const qid = route.query.templateId
+  if (qid) {
+    selectedTemplateId.value = String(qid)
+    await loadAndApplyTemplate(qid, true)
+  }
+})
 </script>
 
 <style scoped>
@@ -172,7 +288,7 @@ async function createTask() {
   display: flex;
   align-items: center;
   gap: 16px;
-  margin-bottom: 32px;
+  margin-bottom: 24px;
 }
 
 .btn-back {
@@ -203,6 +319,55 @@ async function createTask() {
   font-size: 24px;
   font-weight: 700;
   color: var(--text-primary);
+}
+
+.template-bar {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 16px 20px;
+  margin-bottom: 16px;
+}
+
+.template-bar .form-label {
+  margin-bottom: 8px;
+}
+
+.template-bar-row {
+  display: flex;
+  gap: 10px;
+}
+
+.template-select {
+  flex: 1;
+}
+
+.btn-apply-template {
+  flex-shrink: 0;
+  padding: 10px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  border-radius: 10px;
+  border: 1px solid rgba(var(--accent-rgb), 0.3);
+  background: var(--active-bg);
+  color: var(--active-color);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-apply-template:hover:not(:disabled) {
+  background: rgba(var(--accent-rgb), 0.2);
+}
+
+.btn-apply-template:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.template-applied-hint {
+  margin-top: 10px;
+  font-size: 12px;
+  color: #34d399;
 }
 
 .config-form {
@@ -257,6 +422,19 @@ async function createTask() {
   color: var(--text-muted);
 }
 
+.form-textarea {
+  width: 100%;
+  padding: 11px 16px;
+  font-size: 13px;
+  font-family: inherit;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  color: var(--text-primary);
+  outline: none;
+  resize: vertical;
+}
+
 .form-actions {
   display: flex;
   justify-content: flex-end;
@@ -286,7 +464,7 @@ async function createTask() {
   box-shadow: 0 4px 14px rgba(var(--accent-rgb), 0.3);
 }
 
-.action-btn.primary:hover {
+.action-btn.primary:hover:not(:disabled) {
   box-shadow: 0 6px 20px rgba(var(--accent-rgb), 0.45);
   transform: translateY(-1px);
 }
@@ -305,5 +483,6 @@ async function createTask() {
 @media (max-width: 768px) {
   .new-content { padding: 24px 16px 64px; }
   .form-row { grid-template-columns: 1fr; }
+  .template-bar-row { flex-direction: column; }
 }
 </style>

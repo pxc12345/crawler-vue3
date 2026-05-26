@@ -144,14 +144,11 @@ class CrawlerDB:
                 conn.close()
         return saved
 
-    def get_list(self, page=1, page_size=20, keyword="", task_id=None):
+    def get_list(self, page=1, page_size=20, keyword="", task_id=None,
+                 data_type=None, date_from=None, date_to=None,
+                 sort_field=None, sort_order="desc"):
         """
         分页查询爬取数据
-        :param page: 页码
-        :param page_size: 每页条数
-        :param keyword: 搜索关键词（模糊匹配标题和内容）
-        :param task_id: 任务ID（可选，用于过滤特定任务的数据）
-        :return: (数据列表, 总条数)
         """
         conn = None
         try:
@@ -161,16 +158,43 @@ class CrawlerDB:
                 params = {}
 
                 if keyword:
-                    conditions.append("(`title` LIKE %(keyword)s OR `content` LIKE %(keyword)s)")
+                    conditions.append(
+                        "(`title` LIKE %(keyword)s OR `content` LIKE %(keyword)s "
+                        "OR `link` LIKE %(keyword)s OR `image_url` LIKE %(keyword)s)"
+                    )
                     params["keyword"] = "%{}%".format(keyword)
 
                 if task_id:
                     conditions.append("`task_id` = %(task_id)s")
                     params["task_id"] = task_id
 
+                if data_type and data_type != "all":
+                    conditions.append("`type` = %(data_type)s")
+                    params["data_type"] = data_type
+
+                if date_from:
+                    conditions.append("DATE(`collected_at`) >= %(date_from)s")
+                    params["date_from"] = date_from
+
+                if date_to:
+                    conditions.append("DATE(`collected_at`) <= %(date_to)s")
+                    params["date_to"] = date_to
+
                 where = ""
                 if conditions:
                     where = "WHERE " + " AND ".join(conditions)
+
+                allowed_sort = {
+                    "title": "title",
+                    "link": "link",
+                    "content": "content",
+                    "source_url": "source_url",
+                    "type": "type",
+                    "collected_at": "collected_at",
+                    "image_url": "image_url",
+                }
+                order_col = allowed_sort.get(sort_field, "collected_at")
+                order_dir = "ASC" if str(sort_order).lower() == "asc" else "DESC"
 
                 count_sql = "SELECT COUNT(*) AS total FROM `crawler_data` {}".format(where)
                 cursor.execute(count_sql, params)
@@ -179,9 +203,9 @@ class CrawlerDB:
                 offset = (page - 1) * page_size
                 list_sql = (
                     "SELECT * FROM `crawler_data` {} "
-                    "ORDER BY `collected_at` DESC "
+                    "ORDER BY `{}` {} "
                     "LIMIT %(limit)s OFFSET %(offset)s"
-                ).format(where)
+                ).format(where, order_col, order_dir)
                 params["limit"] = page_size
                 params["offset"] = offset
                 cursor.execute(list_sql, params)
@@ -195,6 +219,44 @@ class CrawlerDB:
         except pymysql.Error as e:
             print(f"查询数据失败: {e}")
             return [], 0
+        finally:
+            if conn:
+                conn.close()
+
+    def delete_by_id(self, record_id):
+        conn = None
+        try:
+            conn = pymysql.connect(**self._config)
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    "DELETE FROM `crawler_data` WHERE `id` = %(id)s",
+                    {"id": record_id}
+                )
+                if cursor.rowcount == 0:
+                    return False, "数据不存在"
+            conn.commit()
+            return True, None
+        except pymysql.Error as e:
+            return False, str(e)
+        finally:
+            if conn:
+                conn.close()
+
+    def delete_by_ids(self, ids):
+        if not ids:
+            return 0, "未选择数据"
+        conn = None
+        try:
+            conn = pymysql.connect(**self._config)
+            with conn.cursor() as cursor:
+                placeholders = ",".join(["%s"] * len(ids))
+                sql = "DELETE FROM `crawler_data` WHERE `id` IN ({})".format(placeholders)
+                cursor.execute(sql, ids)
+                deleted = cursor.rowcount
+            conn.commit()
+            return deleted, None
+        except pymysql.Error as e:
+            return 0, str(e)
         finally:
             if conn:
                 conn.close()

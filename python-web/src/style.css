@@ -410,3 +410,20 @@ body {
   font-weight: 700;
   flex-shrink: 0;
 }
+
+/* Element Plus Loading 遮罩随主题色，避免默认白底 */
+.el-loading-mask {
+  background-color: rgba(0, 0, 0, 0.55) !important;
+  background-color: color-mix(in srgb, var(--bg-primary) 78%, transparent) !important;
+}
+.app-theme-loading.el-loading-mask {
+  background-color: rgba(0, 0, 0, 0.5) !important;
+  background-color: color-mix(in srgb, var(--bg-card) 88%, transparent) !important;
+  backdrop-filter: blur(3px);
+}
+.el-loading-spinner .circular .path {
+  stroke: var(--accent-primary) !important;
+}
+.el-loading-spinner .el-loading-text {
+  color: var(--text-secondary) !important;
+}

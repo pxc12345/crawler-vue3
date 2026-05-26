@@ -123,6 +123,19 @@ class TaskDB:
                             "ALTER TABLE `crawler_tasks` ADD COLUMN `{}` {}".format(col_name, col_def[1])
                         )
 
+                for col_def in [
+                    ("category", "VARCHAR(50) NOT NULL DEFAULT 'general' COMMENT '模板分类'"),
+                    ("is_favorite", "TINYINT(1) NOT NULL DEFAULT 0 COMMENT '是否常用模板'"),
+                    ("use_count", "INT NOT NULL DEFAULT 0 COMMENT '使用次数'"),
+                    ("updated_at", "DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间'"),
+                ]:
+                    col_name = col_def[0]
+                    cursor.execute("SHOW COLUMNS FROM `task_templates` LIKE %(col)s", {"col": col_name})
+                    if not cursor.fetchone():
+                        cursor.execute(
+                            "ALTER TABLE `task_templates` ADD COLUMN `{}` {}".format(col_name, col_def[1])
+                        )
+
             conn.commit()
             conn.close()
             return True
@@ -314,19 +327,47 @@ class TaskDB:
             if conn:
                 conn.close()
 
-    def get_templates(self, user_id=0):
+    def _normalize_template_row(self, row):
+        if not row:
+            return row
+        config = row.get("config")
+        if isinstance(config, str) and config.strip():
+            try:
+                row["config"] = json.loads(config)
+            except (json.JSONDecodeError, TypeError):
+                row["config"] = {}
+        elif not isinstance(config, dict):
+            row["config"] = {}
+        row["is_favorite"] = 1 if row.get("is_favorite") else 0
+        row["use_count"] = int(row.get("use_count") or 0)
+        row["category"] = row.get("category") or "general"
+        return row
+
+    def get_templates(self, user_id=0, category="", favorite_only=False):
         conn = None
         try:
             conn = pymysql.connect(**self._config)
             with conn.cursor() as cursor:
+                conditions = ["`user_id` = %(user_id)s"]
+                params = {"user_id": user_id}
+                if category:
+                    conditions.append("`category` = %(category)s")
+                    params["category"] = category
+                if favorite_only:
+                    conditions.append("`is_favorite` = 1")
+                where = "WHERE " + " AND ".join(conditions)
                 cursor.execute(
-                    "SELECT * FROM `task_templates` WHERE `user_id` = %(user_id)s ORDER BY `created_at` DESC",
-                    {"user_id": user_id}
+                    "SELECT * FROM `task_templates` {} "
+                    "ORDER BY `is_favorite` DESC, `updated_at` DESC, `created_at` DESC".format(where),
+                    params
                 )
                 rows = cursor.fetchall()
                 for row in rows:
                     if row.get("created_at"):
                         row["created_at"] = row["created_at"].strftime("%Y-%m-%d %H:%M:%S")
+                    if row.get("updated_at"):
+                        row["updated_at"] = row["updated_at"].strftime("%Y-%m-%d %H:%M:%S")
+                    self._normalize_template_row(row)
                 return rows
         except pymysql.Error as e:
             print(f"查询模板列表失败: {e}")
@@ -335,21 +376,23 @@ class TaskDB:
             if conn:
                 conn.close()
 
-    def create_template(self, name, description="", config=None, user_id=0):
+    def create_template(self, name, description="", config=None, user_id=0, category="general", is_favorite=0):
         conn = None
         try:
             conn = pymysql.connect(**self._config)
             with conn.cursor() as cursor:
                 sql = """
                     INSERT INTO `task_templates`
-                    (`name`, `description`, `config`, `user_id`)
-                    VALUES (%(name)s, %(description)s, %(config)s, %(user_id)s)
+                    (`name`, `description`, `config`, `user_id`, `category`, `is_favorite`)
+                    VALUES (%(name)s, %(description)s, %(config)s, %(user_id)s, %(category)s, %(is_favorite)s)
                 """
                 cursor.execute(sql, {
                     "name": name,
                     "description": description,
-                    "config": json.dumps(config) if config else None,
+                    "config": json.dumps(config, ensure_ascii=False) if config else None,
                     "user_id": user_id,
+                    "category": category or "general",
+                    "is_favorite": 1 if is_favorite else 0,
                 })
                 template_id = cursor.lastrowid
             conn.commit()
@@ -360,15 +403,40 @@ class TaskDB:
             if conn:
                 conn.close()
 
-    def delete_template(self, template_id):
+    def update_template(self, template_id, user_id=0, **kwargs):
         conn = None
         try:
             conn = pymysql.connect(**self._config)
             with conn.cursor() as cursor:
                 cursor.execute(
-                    "DELETE FROM `task_templates` WHERE `id` = %(template_id)s",
-                    {"template_id": template_id}
+                    "SELECT `id` FROM `task_templates` WHERE `id` = %(template_id)s AND `user_id` = %(user_id)s",
+                    {"template_id": template_id, "user_id": user_id}
                 )
+                if not cursor.fetchone():
+                    return False, "模板不存在"
+
+                allowed_fields = ["name", "description", "config", "category", "is_favorite"]
+                updates = []
+                params = {"template_id": template_id, "user_id": user_id}
+                for field in allowed_fields:
+                    if field in kwargs:
+                        value = kwargs[field]
+                        if field == "config":
+                            params[field] = json.dumps(value, ensure_ascii=False) if value is not None else None
+                        elif field == "is_favorite":
+                            params[field] = 1 if value else 0
+                        else:
+                            params[field] = value
+                        updates.append("`{}` = %({})s".format(field, field))
+
+                if not updates:
+                    return False, "没有可更新的字段"
+
+                sql = (
+                    "UPDATE `task_templates` SET {} "
+                    "WHERE `id` = %(template_id)s AND `user_id` = %(user_id)s"
+                ).format(", ".join(updates))
+                cursor.execute(sql, params)
             conn.commit()
             return True, None
         except pymysql.Error as e:
@@ -377,22 +445,71 @@ class TaskDB:
             if conn:
                 conn.close()
 
-    def get_template_by_id(self, template_id):
+    def delete_template(self, template_id, user_id=0):
         conn = None
         try:
             conn = pymysql.connect(**self._config)
             with conn.cursor() as cursor:
                 cursor.execute(
-                    "SELECT * FROM `task_templates` WHERE `id` = %(template_id)s",
-                    {"template_id": template_id}
+                    "DELETE FROM `task_templates` WHERE `id` = %(template_id)s AND `user_id` = %(user_id)s",
+                    {"template_id": template_id, "user_id": user_id}
                 )
+                if cursor.rowcount == 0:
+                    return False, "模板不存在"
+            conn.commit()
+            return True, None
+        except pymysql.Error as e:
+            return False, str(e)
+        finally:
+            if conn:
+                conn.close()
+
+    def get_template_by_id(self, template_id, user_id=0):
+        conn = None
+        try:
+            conn = pymysql.connect(**self._config)
+            with conn.cursor() as cursor:
+                if user_id:
+                    cursor.execute(
+                        "SELECT * FROM `task_templates` WHERE `id` = %(template_id)s AND `user_id` = %(user_id)s",
+                        {"template_id": template_id, "user_id": user_id}
+                    )
+                else:
+                    cursor.execute(
+                        "SELECT * FROM `task_templates` WHERE `id` = %(template_id)s",
+                        {"template_id": template_id}
+                    )
                 row = cursor.fetchone()
-                if row and row.get("created_at"):
-                    row["created_at"] = row["created_at"].strftime("%Y-%m-%d %H:%M:%S")
+                if row:
+                    if row.get("created_at"):
+                        row["created_at"] = row["created_at"].strftime("%Y-%m-%d %H:%M:%S")
+                    if row.get("updated_at"):
+                        row["updated_at"] = row["updated_at"].strftime("%Y-%m-%d %H:%M:%S")
+                    self._normalize_template_row(row)
                 return row
         except pymysql.Error as e:
             print(f"查询模板失败: {e}")
             return None
+        finally:
+            if conn:
+                conn.close()
+
+    def increment_template_use_count(self, template_id, user_id=0):
+        conn = None
+        try:
+            conn = pymysql.connect(**self._config)
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    "UPDATE `task_templates` SET `use_count` = `use_count` + 1 "
+                    "WHERE `id` = %(template_id)s AND `user_id` = %(user_id)s",
+                    {"template_id": template_id, "user_id": user_id}
+                )
+                if cursor.rowcount == 0:
+                    return False, "模板不存在"
+            conn.commit()
+            return True, None
+        except pymysql.Error as e:
+            return False, str(e)
         finally:
             if conn:
                 conn.close()

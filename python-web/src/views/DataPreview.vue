@@ -5,6 +5,13 @@
       <div class="page-header">
         <h1 class="page-title">数据预览</h1>
         <div class="header-actions">
+          <button
+            class="btn-batch-delete"
+            :disabled="selectedIds.length === 0 || deleting"
+            @click="handleBatchDelete"
+          >
+            批量删除{{ selectedIds.length > 0 ? ` (${selectedIds.length})` : '' }}
+          </button>
           <button class="btn-export" @click="showExportOptions = true">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
@@ -22,15 +29,22 @@
             <svg class="filter-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
             </svg>
-            <input v-model="filters.keyword" placeholder="搜索标题、内容..." class="input" @input="handleFilter" />
+            <input
+              v-model="filters.keyword"
+              placeholder="搜索标题、内容、链接、图片地址..."
+              class="input"
+              @input="onKeywordInput"
+              @keyup.enter="applyFilters"
+            />
           </div>
-          <input type="date" v-model="filters.dateFrom" class="input input-date" @change="handleFilter" />
+          <input type="date" v-model="filters.dateFrom" class="input input-date" @change="applyFilters" />
           <span class="date-sep">至</span>
-          <input type="date" v-model="filters.dateTo" class="input input-date" @change="handleFilter" />
-          <select v-model="filters.type" class="input input-select" @change="handleFilter">
+          <input type="date" v-model="filters.dateTo" class="input input-date" @change="applyFilters" />
+          <select v-model="filters.type" class="input input-select" @change="applyFilters">
             <option value="all">全部类型</option>
             <option value="link">链接</option>
             <option value="image">图片</option>
+            <option value="page">页面</option>
           </select>
           <div class="column-toggle-wrapper">
             <button class="btn-column" @click="showColumnMenu = !showColumnMenu">
@@ -41,95 +55,100 @@
             </button>
             <div v-if="showColumnMenu" class="column-menu">
               <label v-for="col in columns" :key="col.key" class="column-option">
-                <input type="checkbox" v-model="col.visible" @change="handleFilter" />
+                <input type="checkbox" v-model="col.visible" />
                 <span>{{ col.label }}</span>
               </label>
             </div>
           </div>
+          <button class="btn-reset" type="button" @click="resetFilters">重置</button>
         </div>
-        <div class="filter-result">共 {{ totalFiltered }} 条数据，当前第 {{ currentPage }} 页</div>
-      </div>
-
-      <div v-if="loading" class="card skeleton-wrap">
-        <div v-for="n in 6" :key="n" class="skeleton-row">
-          <div class="skeleton-line w-15"></div>
-          <div class="skeleton-line w-25"></div>
-          <div class="skeleton-line w-35"></div>
-          <div class="skeleton-line w-10"></div>
-          <div class="skeleton-line w-10"></div>
+        <div class="filter-result">
+          共 {{ totalCount }} 条数据，当前第 {{ currentPage }} / {{ totalPages }} 页，每页 {{ pageSize }} 条
+          <span v-if="refreshing" class="refresh-hint">· 刷新中</span>
         </div>
       </div>
 
-      <div v-else-if="filteredData.length === 0" class="card empty-state">
-        <div class="empty-icon">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/>
-            <polyline points="13 2 13 9 20 9"/>
-          </svg>
-        </div>
-        <p class="empty-text">暂无数据</p>
-        <p class="empty-desc">尝试调整筛选条件或等待新的采集数据入库</p>
-      </div>
+      <div class="card table-card" :class="{ 'is-refreshing': refreshing }">
+        <el-table
+          ref="tableRef"
+          v-loading="loading"
+          element-loading-custom-class="app-theme-loading"
+          element-loading-text="加载中..."
+          :data="tableData"
+          border
+          class="data-el-table"
+          style="width: 100%"
+          max-height="560"
+          @sort-change="handleSortChange"
+          @selection-change="handleSelectionChange"
+        >
+          <el-table-column type="selection" width="48" fixed="left" />
+          <el-table-column v-if="columnVisible('title')" prop="title" label="标题" min-width="160" sortable="custom" show-overflow-tooltip />
+          <el-table-column v-if="columnVisible('link')" prop="link" label="链接" min-width="180" sortable="custom" show-overflow-tooltip>
+            <template #default="{ row }">
+              <a v-if="row.link" :href="row.link" target="_blank" rel="noopener" class="data-link">{{ row.link }}</a>
+              <span v-else class="text-muted">—</span>
+            </template>
+          </el-table-column>
+          <el-table-column v-if="columnVisible('image_url')" label="图片预览" width="100" align="center">
+            <template #default="{ row }">
+              <div v-if="getImageUrl(row)" class="thumb-cell">
+                <el-image
+                  :src="getImageUrl(row)"
+                  :preview-src-list="[getImageUrl(row)]"
+                  :preview-teleported="true"
+                  fit="cover"
+                  lazy
+                  class="thumb-image"
+                >
+                  <template #error>
+                    <span class="img-error">无效</span>
+                  </template>
+                </el-image>
+              </div>
+              <span v-else class="text-muted">—</span>
+            </template>
+          </el-table-column>
+          <el-table-column v-if="columnVisible('content')" prop="content" label="内容摘要" min-width="200" sortable="custom" show-overflow-tooltip />
+          <el-table-column v-if="columnVisible('type')" prop="type" label="类型" width="90" sortable="custom" align="center">
+            <template #default="{ row }">
+              <span class="type-tag" :class="'tag-' + (row.type || 'link')">{{ typeLabels[row.type] || row.type }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column v-if="columnVisible('source_url')" prop="source_url" label="来源URL" min-width="160" sortable="custom" show-overflow-tooltip />
+          <el-table-column v-if="columnVisible('collected_at')" prop="collected_at" label="采集时间" width="170" sortable="custom" />
+          <el-table-column label="操作" width="88" fixed="right" align="center">
+            <template #default="{ row }">
+              <button class="btn-row-delete" type="button" :disabled="deleting" @click="handleDeleteOne(row)">删除</button>
+            </template>
+          </el-table-column>
+        </el-table>
 
-      <div v-else class="card table-card">
-        <div class="table-wrap">
-          <table class="data-table">
-            <thead>
-              <tr>
-                <th v-if="columnVisible('title')" class="sortable" @click="toggleSort('title')">
-                  标题 <span class="sort-icon">{{ sortIcon('title') }}</span>
-                </th>
-                <th v-if="columnVisible('link')" class="sortable" @click="toggleSort('link')">
-                  链接 <span class="sort-icon">{{ sortIcon('link') }}</span>
-                </th>
-                <th v-if="columnVisible('content')" class="sortable" @click="toggleSort('content')">
-                  内容摘要 <span class="sort-icon">{{ sortIcon('content') }}</span>
-                </th>
-                <th v-if="columnVisible('type')" class="sortable" @click="toggleSort('type')">
-                  类型 <span class="sort-icon">{{ sortIcon('type') }}</span>
-                </th>
-                <th v-if="columnVisible('source_url')" class="sortable" @click="toggleSort('source_url')">
-                  来源URL <span class="sort-icon">{{ sortIcon('source_url') }}</span>
-                </th>
-                <th v-if="columnVisible('collected_at')" class="sortable" @click="toggleSort('collected_at')">
-                  采集时间 <span class="sort-icon">{{ sortIcon('collected_at') }}</span>
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="row in paginatedData" :key="row.id">
-                <td v-if="columnVisible('title')" class="td-title">{{ row.title }}</td>
-                <td v-if="columnVisible('link')">
-                  <a :href="row.link" target="_blank" class="data-link">{{ row.link }}</a>
-                </td>
-                <td v-if="columnVisible('content')" class="td-content">{{ row.content }}</td>
-                <td v-if="columnVisible('type')">
-                  <span class="type-tag" :class="'tag-' + row.type">{{ typeLabels[row.type] }}</span>
-                </td>
-                <td v-if="columnVisible('source_url')" class="td-source">{{ row.source_url }}</td>
-                <td v-if="columnVisible('collected_at')" class="td-time">{{ row.collected_at }}</td>
-              </tr>
-            </tbody>
-          </table>
+        <div v-if="!loading && !refreshing && tableData.length === 0" class="table-empty">
+          <div class="empty-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/>
+              <polyline points="13 2 13 9 20 9"/>
+            </svg>
+          </div>
+          <p class="empty-text">{{ hasActiveFilters ? '未找到匹配的数据' : '暂无数据' }}</p>
+          <p class="empty-desc">{{ hasActiveFilters ? '请调整搜索关键词或筛选条件后重试' : '尝试调整筛选条件或等待新的采集数据入库' }}</p>
         </div>
-      </div>
 
-      <div v-if="totalFiltered > 0 && !loading" class="pagination-wrap">
-        <button class="page-btn" :disabled="currentPage <= 1" @click="currentPage--">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
-        </button>
-        <div class="page-numbers">
-          <button
-            v-for="p in pageNumbers"
-            :key="p"
-            class="page-num"
-            :class="{ active: p === currentPage }"
-            @click="currentPage = p"
-          >{{ p }}</button>
+        <div v-if="totalCount > 0" class="pagination-bar">
+          <button class="page-edge-btn" :disabled="currentPage <= 1" @click="goFirstPage">首页</button>
+          <el-pagination
+            v-model:current-page="currentPage"
+            v-model:page-size="pageSize"
+            :page-sizes="[10, 20, 50, 100]"
+            :total="totalCount"
+            layout="total, sizes, prev, pager, next, jumper"
+            background
+            @size-change="handleSizeChange"
+            @current-change="handlePageChange"
+          />
+          <button class="page-edge-btn" :disabled="currentPage >= totalPages" @click="goLastPage">末页</button>
         </div>
-        <button class="page-btn" :disabled="currentPage >= totalPages" @click="currentPage++">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
-        </button>
       </div>
 
       <div v-if="showExportOptions" class="modal-overlay" @click.self="showExportOptions = false">
@@ -157,16 +176,23 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { dataAPI } from '../api/data'
 import NavBar from '../components/NavBar.vue'
 
-const loading = ref(true)
+const loading = ref(false)
+const refreshing = ref(false)
+const deleting = ref(false)
 const showExportOptions = ref(false)
 const showColumnMenu = ref(false)
+const tableRef = ref(null)
+
 const currentPage = ref(1)
-const pageSize = 10
+const pageSize = ref(20)
+const totalCount = ref(0)
+const tableData = ref([])
+const selectedIds = ref([])
 
 const filters = ref({
   keyword: '',
@@ -175,91 +201,221 @@ const filters = ref({
   type: 'all'
 })
 
-const sortKey = ref('')
-const sortDir = ref('asc')
+const sortKey = ref('collected_at')
+const sortDir = ref('desc')
 
-const typeLabels = { link: '链接', image: '图片' }
+let searchDebounceTimer = null
+
+const typeLabels = { link: '链接', image: '图片', page: '页面', mixed: '混合' }
 
 const columns = ref([
   { key: 'title', label: '标题', visible: true },
   { key: 'link', label: '链接', visible: true },
+  { key: 'image_url', label: '图片预览', visible: true },
   { key: 'content', label: '内容摘要', visible: true },
   { key: 'type', label: '类型', visible: true },
   { key: 'source_url', label: '来源URL', visible: true },
   { key: 'collected_at', label: '采集时间', visible: true }
 ])
 
-const rawData = ref([])
+const totalPages = computed(() => Math.max(1, Math.ceil(totalCount.value / pageSize.value)))
+
+const hasActiveFilters = computed(() => {
+  const f = filters.value
+  return !!(f.keyword?.trim() || f.dateFrom || f.dateTo || (f.type && f.type !== 'all'))
+})
 
 function columnVisible(key) {
   return columns.value.find(c => c.key === key)?.visible ?? true
 }
 
-function toggleSort(key) {
-  if (sortKey.value === key) {
-    sortDir.value = sortDir.value === 'asc' ? 'desc' : 'asc'
+function getImageUrl(row) {
+  const url = (row.image_url || '').trim()
+  if (url) return url
+  if (row.type === 'image' && row.link) return row.link.trim()
+  return ''
+}
+
+function buildQueryParams() {
+  const params = {
+    page: currentPage.value,
+    page_size: pageSize.value,
+    sort_field: sortKey.value,
+    sort_order: sortDir.value
+  }
+  const kw = filters.value.keyword?.trim()
+  if (kw) params.keyword = kw
+  if (filters.value.type && filters.value.type !== 'all') params.type = filters.value.type
+  if (filters.value.dateFrom) params.date_from = filters.value.dateFrom
+  if (filters.value.dateTo) params.date_to = filters.value.dateTo
+  return params
+}
+
+async function loadData({ silent = false } = {}) {
+  if (silent) {
+    refreshing.value = true
   } else {
-    sortKey.value = key
-    sortDir.value = 'asc'
+    loading.value = true
+  }
+  try {
+    const res = await dataAPI.getDataList(buildQueryParams())
+    if (res.data.success) {
+      const data = res.data.data || {}
+      tableData.value = data.list || []
+      totalCount.value = data.total ?? 0
+      if (data.page) currentPage.value = data.page
+      if (data.page_size) pageSize.value = data.page_size
+      selectedIds.value = []
+      tableRef.value?.clearSelection()
+    } else {
+      tableData.value = []
+      totalCount.value = 0
+      ElMessage.error(res.data.message || '加载数据失败')
+    }
+  } catch (e) {
+    tableData.value = []
+    totalCount.value = 0
+    ElMessage.error('加载数据失败')
+  } finally {
+    loading.value = false
+    refreshing.value = false
   }
 }
 
-function sortIcon(key) {
-  if (sortKey.value !== key) return '↕'
-  return sortDir.value === 'asc' ? '↑' : '↓'
+function onKeywordInput() {
+  if (searchDebounceTimer) clearTimeout(searchDebounceTimer)
+  searchDebounceTimer = setTimeout(() => {
+    currentPage.value = 1
+    loadData({ silent: true })
+  }, 300)
 }
 
-const filteredData = computed(() => {
-  let result = [...rawData.value]
-  if (filters.value.keyword) {
-    const kw = filters.value.keyword.toLowerCase()
-    result = result.filter(r => (r.title || '').toLowerCase().includes(kw) || (r.content || '').toLowerCase().includes(kw))
-  }
-  if (filters.value.dateFrom) {
-    result = result.filter(r => r.collected_at >= filters.value.dateFrom)
-  }
-  if (filters.value.dateTo) {
-    result = result.filter(r => r.collected_at <= filters.value.dateTo)
-  }
-  if (filters.value.type !== 'all') {
-    result = result.filter(r => r.type === filters.value.type)
-  }
-  if (sortKey.value) {
-    result.sort((a, b) => {
-      const va = a[sortKey.value] || ''
-      const vb = b[sortKey.value] || ''
-      const cmp = String(va).localeCompare(String(vb))
-      return sortDir.value === 'asc' ? cmp : -cmp
-    })
-  }
-  return result
-})
-
-const totalFiltered = computed(() => filteredData.value.length)
-
-const totalPages = computed(() => Math.max(1, Math.ceil(totalFiltered.value / pageSize)))
-
-const paginatedData = computed(() => {
-  const start = (currentPage.value - 1) * pageSize
-  return filteredData.value.slice(start, start + pageSize)
-})
-
-const pageNumbers = computed(() => {
-  const pages = []
-  const total = totalPages.value
-  const curr = currentPage.value
-  let start = Math.max(1, curr - 2)
-  let end = Math.min(total, curr + 2)
-  if (end - start < 4) {
-    if (start === 1) end = Math.min(total, start + 4)
-    else start = Math.max(1, end - 4)
-  }
-  for (let i = start; i <= end; i++) pages.push(i)
-  return pages
-})
-
-function handleFilter() {
+function applyFilters() {
   currentPage.value = 1
+  loadData({ silent: true })
+}
+
+function resetFilters() {
+  filters.value = { keyword: '', dateFrom: '', dateTo: '', type: 'all' }
+  sortKey.value = 'collected_at'
+  sortDir.value = 'desc'
+  currentPage.value = 1
+  loadData({ silent: true })
+}
+
+function handleSortChange({ prop, order }) {
+  if (!prop || !order) {
+    sortKey.value = 'collected_at'
+    sortDir.value = 'desc'
+  } else {
+    sortKey.value = prop
+    sortDir.value = order === 'ascending' ? 'asc' : 'desc'
+  }
+  currentPage.value = 1
+  loadData({ silent: true })
+}
+
+function handleSelectionChange(rows) {
+  selectedIds.value = rows.map(r => r.id)
+}
+
+function handlePageChange(page) {
+  currentPage.value = page
+  loadData({ silent: true })
+}
+
+function handleSizeChange(size) {
+  pageSize.value = size
+  currentPage.value = 1
+  loadData({ silent: true })
+}
+
+function goFirstPage() {
+  if (currentPage.value <= 1) return
+  currentPage.value = 1
+  loadData({ silent: true })
+}
+
+function goLastPage() {
+  if (currentPage.value >= totalPages.value) return
+  currentPage.value = totalPages.value
+  loadData({ silent: true })
+}
+
+async function deleteRecords(ids) {
+  if (!ids.length) return { success: false, message: '未选择数据' }
+  if (ids.length === 1) {
+    try {
+      const res = await dataAPI.deleteData(ids[0])
+      if (res.data.success) return res.data
+    } catch (e) {
+      if (e.response?.status !== 404) throw e
+    }
+  }
+  const res = await dataAPI.batchDeleteData(ids)
+  return res.data
+}
+
+async function handleDeleteOne(row) {
+  try {
+    await ElMessageBox.confirm(
+      `确定删除「${(row.title || '该条数据').slice(0, 40)}」吗？此操作不可恢复。`,
+      '确认删除',
+      { confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning' }
+    )
+    deleting.value = true
+    const result = await deleteRecords([row.id])
+    if (result.success) {
+      ElMessage.success(result.message || '删除成功')
+      if (tableData.value.length === 1 && currentPage.value > 1) {
+        currentPage.value -= 1
+      }
+      await loadData({ silent: true })
+    } else {
+      ElMessage.error(result.message || '删除失败')
+    }
+  } catch (e) {
+    if (e !== 'cancel' && e !== 'close') {
+      const msg = e.response?.status === 404
+        ? '删除接口不可用，请重启后端服务 (python app.py)'
+        : '删除失败'
+      ElMessage.error(msg)
+    }
+  } finally {
+    deleting.value = false
+  }
+}
+
+async function handleBatchDelete() {
+  if (selectedIds.value.length === 0) {
+    ElMessage.warning('请先选择要删除的数据')
+    return
+  }
+  try {
+    await ElMessageBox.confirm(
+      `确定删除选中的 ${selectedIds.value.length} 条数据吗？此操作不可恢复。`,
+      '批量删除确认',
+      { confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning' }
+    )
+    deleting.value = true
+    const result = await deleteRecords(selectedIds.value)
+    if (result.success) {
+      ElMessage.success(result.message || '批量删除成功')
+      currentPage.value = 1
+      await loadData({ silent: true })
+    } else {
+      ElMessage.error(result.message || '批量删除失败')
+    }
+  } catch (e) {
+    if (e !== 'cancel' && e !== 'close') {
+      const msg = e.response?.status === 404
+        ? '删除接口不可用，请重启后端服务 (python app.py)'
+        : '批量删除失败'
+      ElMessage.error(msg)
+    }
+  } finally {
+    deleting.value = false
+  }
 }
 
 async function handleExport(format) {
@@ -274,32 +430,12 @@ async function handleExport(format) {
   }
 }
 
-async function loadData() {
-  loading.value = true
-  try {
-    const res = await dataAPI.getDataList({
-      page: currentPage.value,
-      page_size: pageSize,
-      keyword: filters.value.keyword || undefined,
-      type: filters.value.type !== 'all' ? filters.value.type : undefined,
-      sort_field: sortKey.value || undefined,
-      sort_order: sortDir.value || undefined
-    })
-    if (res.data.success) {
-      rawData.value = res.data.data.list || res.data.data || []
-    } else {
-      rawData.value = []
-    }
-  } catch (error) {
-    ElMessage.error('加载数据失败')
-    rawData.value = []
-  } finally {
-    loading.value = false
-  }
-}
-
 onMounted(() => {
   loadData()
+})
+
+onBeforeUnmount(() => {
+  if (searchDebounceTimer) clearTimeout(searchDebounceTimer)
 })
 </script>
 
@@ -334,22 +470,37 @@ onMounted(() => {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 28px;
+  flex-wrap: wrap;
+  gap: 12px;
 }
 .page-title {
   font-size: 26px; font-weight: 700;
   color: var(--text-primary);
   letter-spacing: -0.5px;
 }
-.btn-export {
+.header-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+.btn-export, .btn-batch-delete {
   display: inline-flex; align-items: center; gap: 6px;
   padding: 10px 20px; font-size: 13px; font-weight: 600;
-  background: var(--gradient-primary);
-  border: none; border-radius: 10px; color: var(--btn-text-color); cursor: pointer;
+  border-radius: 10px; cursor: pointer;
   transition: all 0.25s ease;
+}
+.btn-export {
+  background: var(--gradient-primary);
+  border: none; color: var(--btn-text-color);
   box-shadow: var(--btn-shadow);
 }
 .btn-export:hover { transform: translateY(-1px); box-shadow: var(--btn-hover-shadow); }
 .btn-export svg { width: 16px; height: 16px; }
+.btn-batch-delete {
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  color: #f87171;
+}
+.btn-batch-delete:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.2);
+}
+.btn-batch-delete:disabled { opacity: 0.45; cursor: not-allowed; }
 .card {
   background: var(--bg-card);
   backdrop-filter: blur(20px);
@@ -364,7 +515,7 @@ onMounted(() => {
   flex-wrap: wrap;
 }
 .filter-input {
-  position: relative; display: flex; align-items: center; flex: 1; min-width: 180px;
+  position: relative; display: flex; align-items: center; flex: 1; min-width: 220px;
 }
 .filter-icon {
   position: absolute; left: 12px; width: 16px; height: 16px;
@@ -381,6 +532,14 @@ onMounted(() => {
 .input:focus { border-color: rgba(var(--accent-rgb), 0.4); background: rgba(255, 255, 255, 0.06); }
 .date-sep { font-size: 12px; color: var(--text-muted); }
 .input-select { min-width: 120px; cursor: pointer; color-scheme: dark; }
+.btn-reset {
+  padding: 9px 16px; font-size: 12px; font-weight: 600;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border-color);
+  border-radius: 8px; color: var(--text-secondary);
+  cursor: pointer;
+}
+.btn-reset:hover { color: var(--text-primary); background: rgba(255, 255, 255, 0.08); }
 .column-toggle-wrapper { position: relative; }
 .btn-column {
   display: inline-flex; align-items: center; gap: 5px;
@@ -408,76 +567,115 @@ onMounted(() => {
 .column-option:hover { background: rgba(255, 255, 255, 0.04); color: rgba(255, 255, 255, 0.75); }
 .column-option input { accent-color: var(--accent-primary); }
 .filter-result { margin-top: 12px; font-size: 12px; color: var(--text-muted); }
-.skeleton-wrap { padding: 16px 24px; }
-.skeleton-row { display: flex; gap: 24px; padding: 12px 0; border-bottom: 1px solid rgba(255,255,255,0.02); }
-.skeleton-line {
-  height: 14px; background: rgba(255,255,255,0.04); border-radius: 7px;
-  animation: shimmer 1.5s ease-in-out infinite;
+.refresh-hint { margin-left: 6px; color: var(--accent-primary); font-weight: 500; }
+.table-card { overflow: hidden; padding: 0; }
+.table-card.is-refreshing { opacity: 0.92; transition: opacity 0.2s ease; }
+.data-el-table {
+  --el-table-bg-color: transparent;
+  --el-table-tr-bg-color: transparent;
+  --el-table-header-bg-color: rgba(0, 0, 0, 0.25);
+  --el-table-row-hover-bg-color: rgba(var(--accent-rgb), 0.08);
+  --el-table-border-color: var(--border-color);
+  --el-table-text-color: var(--text-secondary);
+  --el-table-header-text-color: var(--text-muted);
+  --el-fill-color-lighter: rgba(255, 255, 255, 0.03);
+  --el-bg-color: transparent;
 }
-.skeleton-line.w-15 { width: 15%; } .skeleton-line.w-10 { width: 10%; }
-.skeleton-line.w-25 { width: 25%; } .skeleton-line.w-35 { width: 35%; }
-@keyframes shimmer { 0%,100% { opacity: 0.4; } 50% { opacity: 0.8; } }
-.empty-state { text-align: center; padding: 80px 20px; }
-.empty-icon {
-  width: 80px; height: 80px; margin: 0 auto 24px;
-  border-radius: 20px; background: rgba(255,255,255,0.03);
-  display: flex; align-items: center; justify-content: center;
-  color: rgba(255,255,255,0.1);
+.data-el-table :deep(.el-table__inner-wrapper),
+.data-el-table :deep(.el-table__body-wrapper),
+.data-el-table :deep(.el-table__header-wrapper) {
+  background-color: transparent !important;
 }
-.empty-icon svg { width: 36px; height: 36px; }
-.empty-text { font-size: 18px; font-weight: 600; color: var(--text-muted); margin-bottom: 8px; }
-.empty-desc { font-size: 13px; color: var(--text-muted); }
-.table-card { overflow: hidden; }
-.table-wrap { overflow-x: auto; }
-.data-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-.data-table th {
-  padding: 14px 16px; text-align: left; font-weight: 600;
-  color: var(--text-muted); font-size: 11px; text-transform: uppercase;
-  letter-spacing: 0.5px; border-bottom: 1px solid var(--border-color);
-  white-space: nowrap; background: rgba(0,0,0,0.15);
+.data-el-table :deep(.el-table__header th.el-table__cell) {
+  background-color: rgba(0, 0, 0, 0.25) !important;
+  color: var(--text-muted) !important;
+  border-color: var(--border-color) !important;
 }
-.data-table th.sortable { cursor: pointer; user-select: none; }
-.data-table th.sortable:hover { color: var(--text-secondary); }
-.sort-icon { font-size: 10px; margin-left: 4px; opacity: 0.5; }
-.data-table td {
-  padding: 12px 16px; color: var(--text-secondary);
-  border-bottom: 1px solid var(--border-color);
-  vertical-align: top; line-height: 1.5;
+.data-el-table :deep(.el-table__body tr),
+.data-el-table :deep(.el-table__body tr.el-table__row--striped) {
+  background-color: rgba(255, 255, 255, 0.02) !important;
 }
-.data-table tbody tr { transition: background 0.15s ease; }
-.data-table tbody tr:hover { background: rgba(var(--accent-rgb), 0.04); }
-.td-title { font-weight: 500; color: var(--text-primary); max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.data-link { color: var(--accent-color); text-decoration: none; max-width: 180px; display: inline-block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.data-el-table :deep(.el-table__body td.el-table__cell) {
+  background-color: transparent !important;
+  color: var(--text-secondary) !important;
+  border-color: var(--border-color) !important;
+}
+.data-el-table :deep(.el-table__body tr:hover > td.el-table__cell) {
+  background-color: rgba(var(--accent-rgb), 0.08) !important;
+}
+.data-el-table :deep(.el-table__body .cell) {
+  color: var(--text-secondary);
+}
+.data-el-table :deep(.el-table__empty-block) {
+  background-color: transparent !important;
+}
+.data-el-table :deep(.el-checkbox__inner) {
+  background-color: rgba(255, 255, 255, 0.06);
+  border-color: var(--border-color);
+}
+.thumb-cell {
+  display: flex; justify-content: center; align-items: center;
+}
+.thumb-image {
+  width: 56px; height: 56px; border-radius: 8px;
+  border: 1px solid var(--border-color);
+  cursor: zoom-in;
+}
+.img-error {
+  font-size: 11px; color: var(--text-muted);
+}
+.data-link {
+  color: var(--accent-color);
+  text-decoration: none;
+}
 .data-link:hover { text-decoration: underline; }
-.td-content { max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-muted); }
-.td-source { max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: monospace; font-size: 12px; }
-.td-time { white-space: nowrap; font-family: monospace; font-size: 12px; color: var(--text-muted); }
+.text-muted { color: var(--text-muted); font-size: 12px; }
 .type-tag {
   display: inline-block; padding: 3px 10px; border-radius: 6px;
   font-size: 11px; font-weight: 600;
 }
 .tag-link { background: rgba(var(--accent-rgb), 0.15); color: var(--active-color); }
 .tag-image { background: rgba(16,185,129,0.15); color: #34d399; }
-.pagination-wrap {
-  display: flex; justify-content: center; align-items: center;
-  gap: 8px; margin-top: 24px;
+.tag-page { background: rgba(255,255,255,0.08); color: var(--text-muted); }
+.btn-row-delete {
+  padding: 4px 10px; font-size: 12px; font-weight: 600;
+  color: #f87171; background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.25);
+  border-radius: 6px; cursor: pointer;
 }
-.page-btn {
-  width: 38px; height: 38px; display: flex; align-items: center; justify-content: center;
-  background: var(--bg-card); border: 1px solid var(--border-color);
-  border-radius: 10px; color: var(--text-secondary); cursor: pointer; transition: all 0.25s ease;
+.btn-row-delete:hover:not(:disabled) { background: rgba(239, 68, 68, 0.18); }
+.btn-row-delete:disabled { opacity: 0.5; cursor: not-allowed; }
+.table-empty {
+  text-align: center; padding: 48px 20px 32px;
 }
-.page-btn:hover:not(:disabled) { color: var(--text-primary); border-color: var(--border-color); }
-.page-btn:disabled { opacity: 0.3; cursor: not-allowed; }
-.page-btn svg { width: 18px; height: 18px; }
-.page-numbers { display: flex; gap: 4px; }
-.page-num {
-  width: 34px; height: 34px; display: flex; align-items: center; justify-content: center;
-  background: transparent; border: 1px solid transparent; border-radius: 8px;
-  font-size: 13px; font-weight: 500; color: var(--text-muted); cursor: pointer; transition: all 0.2s ease;
+.table-empty .empty-icon {
+  width: 64px; height: 64px; margin: 0 auto 16px;
+  border-radius: 16px; background: rgba(255,255,255,0.03);
+  display: flex; align-items: center; justify-content: center;
+  color: rgba(255,255,255,0.1);
 }
-.page-num:hover { color: var(--text-primary); background: rgba(255,255,255,0.04); }
-.page-num.active { background: rgba(var(--accent-rgb), 0.15); color: var(--accent-color); border-color: rgba(var(--accent-rgb), 0.2); font-weight: 600; }
+.table-empty .empty-icon svg { width: 28px; height: 28px; }
+.table-empty .empty-text { font-size: 16px; font-weight: 600; color: var(--text-muted); margin-bottom: 6px; }
+.table-empty .empty-desc { font-size: 13px; color: var(--text-muted); }
+.pagination-bar {
+  display: flex; align-items: center; justify-content: center;
+  flex-wrap: wrap; gap: 12px;
+  padding: 20px 16px;
+  border-top: 1px solid var(--border-color);
+}
+.page-edge-btn {
+  padding: 8px 14px; font-size: 12px; font-weight: 600;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 8px; color: var(--text-secondary);
+  cursor: pointer;
+}
+.page-edge-btn:hover:not(:disabled) { color: var(--text-primary); border-color: rgba(255,255,255,0.15); }
+.page-edge-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+.pagination-bar :deep(.el-pagination) {
+  flex-wrap: wrap;
+  justify-content: center;
+}
 .modal-overlay {
   position: fixed; top: 0; left: 0; width: 100%; height: 100%;
   background: rgba(0,0,0,0.6); backdrop-filter: blur(4px);
@@ -507,17 +705,16 @@ onMounted(() => {
   border-radius: 10px; color: var(--text-secondary); cursor: pointer; transition: all 0.2s ease;
 }
 .btn-close-modal:hover { background: rgba(255,255,255,0.08); color: var(--text-primary); }
-.header-actions { display: flex; gap: 10px; }
 
 @media (max-width: 768px) {
   .content { padding: 24px 16px 64px; }
   .page-title { font-size: 22px; }
   .filter-row { gap: 8px; }
   .filter-input { min-width: 100%; flex: none; }
+  .pagination-bar { flex-direction: column; }
   .modal-card { min-width: auto; width: 90%; padding: 24px; }
 }
 @media (max-width: 560px) {
-  .data-table th, .data-table td { padding: 8px 10px; font-size: 11px; }
   .export-options { flex-direction: column; }
 }
 </style>
