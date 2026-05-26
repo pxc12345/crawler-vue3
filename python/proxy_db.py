@@ -245,6 +245,39 @@ class ProxyDB:
             if conn:
                 conn.close()
 
+    def get_proxies_by_group_name(self, group_name):
+        """按分组名称获取可用代理列表"""
+        if not group_name or not str(group_name).strip():
+            return []
+        conn = None
+        try:
+            conn = pymysql.connect(**self._config)
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT p.* FROM `proxy_pool` p
+                    INNER JOIN `proxy_group_mapping` m ON p.id = m.proxy_id
+                    INNER JOIN `proxy_groups` g ON g.id = m.group_id
+                    WHERE g.name = %(group_name)s
+                      AND LOWER(p.status) IN ('online', 'active')
+                    ORDER BY p.success_rate DESC, p.created_at DESC
+                    """,
+                    {"group_name": str(group_name).strip()},
+                )
+                rows = cursor.fetchall()
+                for row in rows:
+                    if row.get("last_check_at"):
+                        row["last_check_at"] = row["last_check_at"].strftime("%Y-%m-%d %H:%M:%S")
+                    if row.get("created_at"):
+                        row["created_at"] = row["created_at"].strftime("%Y-%m-%d %H:%M:%S")
+                return rows
+        except pymysql.Error as e:
+            print(f"按分组查询代理失败: {e}")
+            return []
+        finally:
+            if conn:
+                conn.close()
+
     def get_proxy_groups(self):
         conn = None
         try:

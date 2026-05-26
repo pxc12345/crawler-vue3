@@ -3,7 +3,7 @@ from flask_cors import CORS, cross_origin
 from src.auth_service import auth_service
 from src.notification_db import notification_db
 from src.notifications.verification_service import verification_service
-from crawler_engine import crawler_engine
+from crawler_engine import crawler_engine, get_engine_info, ENGINE_VERSION
 from crawler_db import crawler_db
 from task_db import task_db
 from alert_db import alert_db
@@ -49,6 +49,15 @@ alert_db.connect()
 proxy_db.connect()
 system_db.connect()
 notification_db._init_db()
+
+_crawler_boot = get_engine_info()
+print(
+    "[app] CrawlerEngine version={version}, curl_cffi={curl_cffi}, cloudscraper={cloudscraper}".format(
+        **_crawler_boot
+    )
+)
+if ENGINE_VERSION != "v3-curl-multi":
+    print("[app] WARNING: unexpected crawler engine version")
 
 
 def is_valid_email(email):
@@ -469,8 +478,14 @@ def crawler_start():
                 'success': False, 'message': f'爬取模式必须是 {", ".join(valid_modes)} 之一', 'code': 'INVALID_MODE'
             }), 400
 
+        crawl_options = _build_crawl_options(data or {})
         success, message = crawler_engine.start(
-            target_url, total_pages, int(interval_seconds), _save_crawled_data, crawl_mode
+            target_url,
+            total_pages,
+            int(interval_seconds),
+            _save_crawled_data,
+            crawl_mode,
+            crawl_options=crawl_options,
         )
         return jsonify({'success': success, 'message': message}), 200 if success else 400
 
@@ -596,13 +611,16 @@ def crawler_data_export():
 
 @app.route('/api/health', methods=['GET'])
 def health_check():
+    crawler_info = get_engine_info()
     return jsonify({
         'success': True,
         'message': 'Server is running',
         'template_api': 'v2',
         'template_features': ['PUT', 'use', 'favorite', 'category', 'full_config'],
         'data_api': 'v2',
-        'data_features': ['delete', 'batch_delete', 'filter', 'sort']
+        'data_features': ['delete', 'batch_delete', 'filter', 'sort'],
+        'crawler': crawler_info,
+        'crawler_ready': crawler_info.get('curl_cffi') is True,
     }), 200
 
 
@@ -705,20 +723,46 @@ def _normalize_template_config(config):
         interval_seconds = int(raw / 1000) if raw and raw > 60 else raw
     max_retries = config.get('max_retries')
     if max_retries is None:
-        max_retries = config.get('maxRetries', 3)
+        max_retries = config.get('maxRetries', 6)
     return {
         'target_url': (config.get('target_url') or '').strip(),
         'cron_expr': config.get('cron_expr') or '*/30 * * * *',
         'interval_seconds': int(interval_seconds or 3),
         'concurrency': int(config.get('concurrency') or 1),
-        'max_retries': int(max_retries or 0),
-        'maxRetries': int(max_retries or 0),
-        'retry_interval': int(config.get('retry_interval') or 60),
+        'max_retries': int(max_retries or 6),
+        'maxRetries': int(max_retries or 6),
+        'retry_interval': int(config.get('retry_interval') or 3),
         'crawl_mode': (config.get('crawl_mode') or 'link').strip().lower(),
         'total_pages': int(config.get('total_pages') or 1),
         'headers': config.get('headers') or {},
         'proxy_group': (config.get('proxy_group') or '').strip(),
         'task_type': (config.get('task_type') or 'crawler').strip(),
+    }
+
+
+def _build_crawl_options(config):
+    """从任务/模板配置构建爬虫引擎选项"""
+    if not isinstance(config, dict):
+        config = {}
+    max_retries = config.get('max_retries')
+    if max_retries is None:
+        max_retries = config.get('maxRetries', 6)
+    max_retries = int(max_retries or 6)
+    if max_retries < 1:
+        max_retries = 6
+    retry_interval = int(config.get('retry_interval') or 3)
+    if retry_interval < 1:
+        retry_interval = 3
+    return {
+        'max_retries': max_retries,
+        'retry_interval': retry_interval,
+        'timeout': int(config.get('timeout') or 22),
+        'headers': config.get('headers') or {},
+        'proxy_group': (config.get('proxy_group') or '').strip(),
+        'continue_on_error': True,
+        'validate_images': bool(config.get('validate_images', False)),
+        'use_curl_cffi': True,
+        'use_cloudscraper': True,
     }
 
 
@@ -1027,13 +1071,15 @@ def task_start(task_id):
                 config = {}
         target_url = (config.get('target_url') or task.get('target_url') or '').strip()
 
+        crawl_options = _build_crawl_options(config)
         result = crawler_engine.start(
             target_url,
             config.get('total_pages', 1),
             config.get('interval_seconds', 3),
             _save_crawled_data,
             config.get('crawl_mode', 'link'),
-            task_id=task_id
+            task_id=task_id,
+            crawl_options=crawl_options,
         )
 
         if isinstance(result, tuple):

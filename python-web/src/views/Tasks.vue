@@ -124,14 +124,13 @@
             <div class="progress-bar">
               <div class="progress-fill" :class="task.status === 'completed' ? 'high' : task.status === 'failed' ? 'low' : getRealtimeSuccessRate(task) >= 90 ? 'high' : getRealtimeSuccessRate(task) >= 60 ? 'mid' : 'low'" :style="{ width: getRealtimeSuccessRate(task) + '%' }"></div>
             </div>
-            <!-- 错误信息提示 -->
-            <div v-if="task.status === 'error' && task._errorMessage" class="error-tip">
+            <div v-if="displayTaskError(task)" class="error-tip" :title="task._errorMessage">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <circle cx="12" cy="12" r="10"/>
                 <line x1="12" y1="8" x2="12" y2="12"/>
                 <line x1="12" y1="16" x2="12.01" y2="16"/>
               </svg>
-              {{ task._errorMessage }}
+              <span class="error-tip-text">{{ formatTaskError(task._errorMessage) }}</span>
             </div>
           </div>
 
@@ -348,6 +347,17 @@ function normalizeStatus(status) {
   return s
 }
 
+function formatTaskError(msg) {
+  if (!msg) return ''
+  const text = String(msg).replace(/\s+/g, ' ').trim()
+  return text.length > 160 ? `${text.slice(0, 160)}…` : text
+}
+
+function displayTaskError(task) {
+  if (!task._errorMessage) return false
+  return task.status === 'failed' || task.status === 'stopped'
+}
+
 function mapTaskFromApi(item) {
   const crawlerStatus = item.crawler_status || {}
   const engineMatches = crawlerStatus.task_id != null
@@ -372,7 +382,14 @@ function mapTaskFromApi(item) {
   if (Number.isNaN(successRate)) successRate = 0
 
   const taskStatus = normalizeStatus(item.status)
-  const errorMessage = item.error_message || liveStatus.error_message || ''
+  const config = item.config && typeof item.config === 'object' ? item.config : {}
+  const lastExec = config._last_execution || {}
+  const errorMessage = (
+    item.error_message
+    || liveStatus.error_message
+    || lastExec.error_message
+    || ''
+  )
 
   // 记录任务开始时间（如果任务正在运行）
   if (taskStatus === 'running' && !taskStartTimes.value[item.id]) {
@@ -494,6 +511,12 @@ onMounted(() => {
               task._succeededPages = engineStatus.succeeded_pages || 0
               if (engineStatus.elapsed_seconds != null) {
                 task._executionTime = engineStatus.elapsed_seconds
+              }
+              if (engineStatus.error_message) {
+                task._errorMessage = engineStatus.error_message
+              }
+              if (engineStatus.status === 'error') {
+                task.status = 'failed'
               }
               if (['completed', 'idle', 'error', 'stopped'].includes(engineStatus.status)) {
                 shouldRefreshList = true
@@ -998,23 +1021,28 @@ onUnmounted(() => {
 
 .error-tip {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 6px;
   margin-top: 8px;
-  padding: 6px 10px;
-  background: rgba(239, 68, 68, 0.15);
-  border: 1px solid rgba(239, 68, 68, 0.3);
-  border-radius: 6px;
+  padding: 8px 10px;
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  border-radius: 8px;
   font-size: 11px;
-  color: #f87171;
-  line-height: 1.4;
-  word-break: break-all;
+  color: #fca5a5;
+  line-height: 1.45;
 }
 
 .error-tip svg {
   flex-shrink: 0;
   width: 14px;
   height: 14px;
+  margin-top: 1px;
+}
+
+.error-tip-text {
+  flex: 1;
+  word-break: break-word;
 }
 
 .task-card-actions {

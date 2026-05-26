@@ -814,6 +814,16 @@ watch(activeTab, (val) => {
   cursor: not-allowed;
 }
 
+select.form-input {
+  color-scheme: dark;
+  cursor: pointer;
+}
+
+select.form-input option {
+  background-color: #161b22;
+  color: rgba(255, 255, 255, 0.92);
+}
+
 .form-textarea {
   width: 100%;
   padding: 11px 16px;

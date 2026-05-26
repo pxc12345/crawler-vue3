@@ -418,6 +418,16 @@ onMounted(async () => {
   box-shadow: 0 0 0 3px var(--glow-color);
 }
 
+select.form-input {
+  color-scheme: dark;
+  cursor: pointer;
+}
+
+select.form-input option {
+  background-color: #161b22;
+  color: rgba(255, 255, 255, 0.92);
+}
+
 .form-input::placeholder {
   color: var(--text-muted);
 }
