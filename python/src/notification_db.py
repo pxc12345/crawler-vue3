@@ -2,24 +2,22 @@ import time
 import pymysql
 from datetime import datetime
 
+from db_settings import PYMYSQL_CONFIG
+
 
 class NotificationDB:
     def __init__(self):
-        self.db_config = {
-            'host': 'localhost',
-            'port': 3308,
-            'user': 'root',
-            'password': 'Pxc7890.',
-            'database': 'school_db',
-            'charset': 'utf8mb4'
-        }
+        self.db_config = dict(PYMYSQL_CONFIG)
         self.connection = None
-        self._connect()
 
     def _connect(self):
         try:
-            if self.connection:
+            if self.connection and self.connection.open:
                 self.connection.close()
+        except Exception:
+            pass
+        self.connection = None
+        try:
             self.connection = pymysql.connect(**self.db_config)
             self._init_db()
         except Exception as e:

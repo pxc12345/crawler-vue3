@@ -3,6 +3,8 @@ import json
 import os
 from datetime import datetime
 
+from db_settings import DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, DB_NAME, DB_CHARSET, DB_CA_PATH
+
 
 class AlertDB:
     """
@@ -12,12 +14,15 @@ class AlertDB:
 
     def __init__(self):
         self._config = {
-            "host": os.environ.get("DB_HOST", "localhost"),
-            "port": int(os.environ.get("DB_PORT", 3308)),
-            "user": os.environ.get("DB_USER", "root"),
-            "password": os.environ.get("DB_PASSWORD", "Pxc7890."),
-            "database": os.environ.get("DB_NAME", "crawler_manager"),
-            "charset": "utf8mb4",
+            "host": os.environ.get("DB_HOST", DB_HOST),
+            "port": int(os.environ.get("DB_PORT", DB_PORT)),
+            "user": os.environ.get("DB_USER", DB_USER),
+            "password": os.environ.get("DB_PASSWORD", DB_PASSWORD),
+            "database": os.environ.get("DB_NAME", DB_NAME),
+            "charset": DB_CHARSET,
+            "ssl_ca": DB_CA_PATH,
+            "ssl_verify_cert": True,
+            "ssl_verify_identity": True,
             "cursorclass": pymysql.cursors.DictCursor,
         }
         self._ensure_database()

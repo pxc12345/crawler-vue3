@@ -1,3 +1,33 @@
+import os
+from urllib.parse import quote_plus
+
+from db_settings import (
+    DB_HOST,
+    DB_PORT,
+    DB_USER,
+    DB_PASSWORD,
+    DB_NAME,
+    DB_CHARSET,
+    PYMYSQL_CONFIG,
+)
+
+os.environ.setdefault("DB_HOST", DB_HOST)
+os.environ.setdefault("DB_PORT", str(DB_PORT))
+os.environ.setdefault("DB_USER", DB_USER)
+os.environ.setdefault("DB_PASSWORD", DB_PASSWORD)
+os.environ.setdefault("DB_NAME", DB_NAME)
+
+SQLALCHEMY_DATABASE_URI = (
+    "mysql+pymysql://{user}:{password}@{host}:{port}/{database}"
+    "?charset=utf8mb4&ssl_verify_cert=true&ssl_verify_identity=true"
+).format(
+    user=quote_plus(DB_USER),
+    password=quote_plus(DB_PASSWORD),
+    host=DB_HOST,
+    port=DB_PORT,
+    database=DB_NAME,
+)
+
 from flask import Flask, request, jsonify, Response
 from flask_cors import CORS, cross_origin
 from src.auth_service import auth_service
@@ -17,6 +47,16 @@ import psutil
 import pymysql
 
 app = Flask(__name__)
+app.config["SQLALCHEMY_DATABASE_URI"] = SQLALCHEMY_DATABASE_URI
+app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+
+# notification_db 模块内为硬编码配置，导入后切换为线上库并重连
+notification_db.db_config = dict(PYMYSQL_CONFIG)
+notification_db.connection = None
+try:
+    notification_db._connect()
+except Exception as e:
+    print(f"[app] notification_db 连接警告: {e}")
 
 # 全局 CORS 配置 - 允许所有来源和方法
 @app.before_request

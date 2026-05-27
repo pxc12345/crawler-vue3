@@ -1,17 +1,12 @@
 import pymysql
 from datetime import datetime
 
+from db_settings import PYMYSQL_CONFIG
+
 
 class StudentDB:
     def __init__(self):
-        self.connection = pymysql.connect(
-            host='localhost',
-            port=3308,
-            user='root',
-            password='Pxc7890.',
-            database='school_db',
-            charset='utf8mb4'
-        )
+        self.connection = pymysql.connect(**PYMYSQL_CONFIG)
         self._init_db()
 
     def _init_db(self):

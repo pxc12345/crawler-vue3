@@ -720,7 +720,7 @@ if __name__ == "__main__":
     print("  学生管理系统 + 用户认证系统 API")
     print("=" * 50)
     print("API地址: http://127.0.0.1:5000")
-    print("数据库: school_db (MySQL)")
+    print("数据库: sys (TiDB Cloud @ gateway01.ap-southeast-1.prod.aws.tidbcloud.com)")
     print("前端地址: http://localhost:5173")
     print("=" * 50)
     app.run(host="0.0.0.0", port=5000, debug=True)
