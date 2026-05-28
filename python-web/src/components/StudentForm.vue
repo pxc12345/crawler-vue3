@@ -118,7 +118,7 @@ watch(() => props.student, (newVal) => {
 function getFullUrl(url) {
   if (!url) return ''
   if (url.startsWith('http')) return url
-  return `http://127.0.0.1:5000${url}`
+  return `https://crawler-vue3.onrender.com${url}`
 }
 
 function triggerFileInput() {
