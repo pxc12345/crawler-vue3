@@ -58,12 +58,35 @@ try:
 except Exception as e:
     print(f"[app] notification_db 连接警告: {e}")
 
-# 全局 CORS 配置 - 允许所有来源和方法
+def _cors_origins():
+    default = (
+        "https://crawler-pro.onrender.com,"
+        "http://localhost:5173,http://127.0.0.1:5173,"
+        "http://localhost:3000,http://127.0.0.1:3000"
+    )
+    raw = os.getenv("CORS_ORIGINS", default)
+    return [o.strip() for o in raw.split(",") if o.strip()]
+
+
+_CORS_ORIGINS = _cors_origins()
+
+
+def _cors_allow_origin():
+    origin = request.headers.get("Origin")
+    if origin and origin in _CORS_ORIGINS:
+        return origin
+    return None
+
+
+# 全局 CORS 配置
 @app.before_request
 def handle_cors_preflight():
     if request.method == 'OPTIONS':
         response = app.make_response(('', 200))
-        response.headers['Access-Control-Allow-Origin'] = request.headers.get('Origin', '*')
+        allowed = _cors_allow_origin()
+        if allowed:
+            response.headers['Access-Control-Allow-Origin'] = allowed
+            response.headers['Access-Control-Allow-Credentials'] = 'true'
         response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
         response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
         response.headers['Access-Control-Max-Age'] = '86400'
@@ -71,11 +94,7 @@ def handle_cors_preflight():
 
 CORS(app, resources={
     r"/api/.*": {
-        "origins": [
-            "https://crawler-pro.onrender.com",
-            "http://localhost:5173", "http://127.0.0.1:5173",
-            "http://localhost:3000", "http://127.0.0.1:3000"
-        ],
+        "origins": _CORS_ORIGINS,
         "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
         "allow_headers": ["Content-Type", "Authorization"],
         "supports_credentials": True,

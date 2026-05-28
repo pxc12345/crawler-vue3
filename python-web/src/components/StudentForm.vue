@@ -70,6 +70,7 @@
 <script setup>
 import { ref, computed, watch } from 'vue'
 import { studentApi } from '../api/student.js'
+import { API_ORIGIN } from '../config/api'
 
 const props = defineProps({
   student: {
@@ -118,7 +119,7 @@ watch(() => props.student, (newVal) => {
 function getFullUrl(url) {
   if (!url) return ''
   if (url.startsWith('http')) return url
-  return `https://crawler-vue3.onrender.com${url}`
+  return `${API_ORIGIN}${url}`
 }
 
 function triggerFileInput() {

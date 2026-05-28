@@ -1,8 +1,9 @@
 import axios from 'axios'
+import { API_BASE_URL } from '../config/api'
 
 const api = axios.create({
-  baseURL: 'https://crawler-vue3.onrender.com/api',
-  timeout: 10000,
+  baseURL: API_BASE_URL,
+  timeout: 60000,
   headers: {
     'Content-Type': 'application/json'
   }

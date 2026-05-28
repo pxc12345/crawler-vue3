@@ -1,4 +1,6 @@
-const API_BASE_URL = 'https://crawler-vue3.onrender.com'
+import { API_ORIGIN } from '../config/api'
+
+const API_BASE_URL = API_ORIGIN
 
 async function request(url, options = {}) {
   try {
