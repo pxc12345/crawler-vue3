@@ -1,7 +1,6 @@
 /**
- * API 基址：生产构建时在 Render 等平台设置 VITE_API_BASE_URL
- * 示例：VITE_API_BASE_URL=https://your-backend.onrender.com/api
- * 开发环境未设置时走 Vite 代理 /api → localhost:5000
+ * API 基址：在 python-web/.env 中配置 VITE_API_BASE_URL（远程/本地二选一，注释切换）
+ * 未配置时 dev 模式走 Vite 代理 /api → localhost:5000
  */
 function trimTrailingSlash(url) {
   return url.replace(/\/+$/, '')
