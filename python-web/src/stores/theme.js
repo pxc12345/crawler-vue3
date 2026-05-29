@@ -183,6 +183,37 @@ const THEMES = {
       '--avatar-bg': 'linear-gradient(135deg, #06b6d4, #ec4899)',
       '--btn-text-color': '#ffffff',
     }
+  },
+  'elegant-white': {
+    name: '雅致白',
+    label: '纯净优雅白',
+    colors: {
+      '--bg-primary': '#ffffff',
+      '--bg-card': 'rgba(255, 255, 255, 0.96)',
+      '--border-color': 'rgba(0, 0, 0, 0.08)',
+      '--text-primary': '#1a1a2e',
+      '--text-secondary': '#4a5568',
+      '--text-muted': '#6b7280',
+      '--accent-primary': '#374151',
+      '--accent-secondary': '#1f2937',
+      '--accent-rgb': '55, 65, 81',
+      '--gradient-primary': 'linear-gradient(135deg, #374151, #1f2937)',
+      '--btn-shadow': '0 2px 12px rgba(55, 65, 81, 0.15)',
+      '--btn-hover-shadow': '0 4px 20px rgba(55, 65, 81, 0.25)',
+      '--card-hover-bg': 'rgba(55, 65, 81, 0.04)',
+      '--active-color': '#1f2937',
+      '--active-bg': 'rgba(55, 65, 81, 0.08)',
+      '--logo-gradient': 'linear-gradient(135deg, #374151, #1f2937)',
+      '--glow-color': 'rgba(55, 65, 81, 0.04)',
+      '--glow-color-2': 'rgba(31, 41, 55, 0.03)',
+      '--avatar-bg': 'linear-gradient(135deg, #374151, #1f2937)',
+      '--btn-text-color': '#ffffff',
+      '--link-color': '#374151',
+      '--link-hover-color': '#1f2937',
+      '--primary-600': '#374151',
+      '--primary-700': '#1f2937',
+      '--primary-800': '#111827',
+    }
   }
 }
 

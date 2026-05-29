@@ -64,6 +64,8 @@
 
         <router-link to="/alerts" class="nav-link" :class="{ active: $route.path === '/alerts' }">告警中心</router-link>
 
+        <router-link to="/guide" class="nav-link" :class="{ active: $route.path === '/guide' }">使用说明</router-link>
+
         <div class="nav-user">
           <div class="user-avatar">{{ authStore.user?.username?.charAt(0)?.toUpperCase() }}</div>
           <span class="user-name">{{ authStore.user?.username }}</span>
