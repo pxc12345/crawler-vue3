@@ -10,7 +10,7 @@ from src.datetime_utils import now_utc
 class AuthService:
     SECRET_KEY = 'your-secret-key-change-in-production-12345'
     ALGORITHM = 'HS256'
-    ACCESS_TOKEN_EXPIRE_MINUTES = 30
+    ACCESS_TOKEN_EXPIRE_HOURS = 24
     REFRESH_TOKEN_EXPIRE_DAYS = 7
     MAX_LOGIN_ATTEMPTS = 5
     LOCKOUT_MINUTES = 15
@@ -26,7 +26,7 @@ class AuthService:
         return bcrypt.checkpw(password.encode('utf-8'), password_hash.encode('utf-8'))
 
     def create_access_token(self, user_id: int, username: str) -> str:
-        expire = datetime.utcnow() + timedelta(minutes=self.ACCESS_TOKEN_EXPIRE_MINUTES)
+        expire = datetime.utcnow() + timedelta(hours=self.ACCESS_TOKEN_EXPIRE_HOURS)
         payload = {
             'sub': str(user_id),  # 转换为字符串
             'username': username,
