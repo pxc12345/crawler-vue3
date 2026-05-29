@@ -196,20 +196,29 @@ def login():
             return jsonify({'success': False, 'message': '请输入账号和密码', 'code': 'MISSING_CREDENTIALS'}), 400
 
         result = auth_service.authenticate_user(identifier, password)
-        
+
         if result['success']:
-            notification_db.add_audit_log(
-                user_id=result['data']['user']['id'],
-                action='LOGIN',
-                ip_address=get_client_ip(),
-                user_agent=request.headers.get('User-Agent'),
-                details=f'用户 {identifier} 登录成功'
-            )
-        
+            try:
+                notification_db.add_audit_log(
+                    user_id=result['data']['user']['id'],
+                    action='LOGIN',
+                    ip_address=get_client_ip(),
+                    user_agent=request.headers.get('User-Agent'),
+                    details=f'用户 {identifier} 登录成功'
+                )
+            except Exception as audit_err:
+                print(f"[login] audit log failed (login still ok): {audit_err}")
+
         return jsonify(result), 200 if result['success'] else 401
 
     except Exception as e:
-        return jsonify({'success': False, 'message': '登录失败', 'code': 'LOGIN_FAILED', 'error': str(e)}), 500
+        print(f"[login] error: {e}")
+        return jsonify({
+            'success': False,
+            'message': '登录失败，请检查服务端数据库与日志配置',
+            'code': 'LOGIN_FAILED',
+            'error': str(e)
+        }), 500
 
 
 @app.route('/api/auth/refresh', methods=['POST'])

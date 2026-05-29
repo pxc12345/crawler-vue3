@@ -115,7 +115,11 @@ async function handleLogin() {
       errorMessage.value = result.message || '登录失败'
     }
   } catch (error) {
-    errorMessage.value = error.response?.data?.message || '网络错误，请稍后重试'
+    const data = error.response?.data
+    errorMessage.value = data?.message
+      || (data?.error ? `请求失败：${data.error}` : null)
+      || (error.message === 'Network Error' ? '无法连接服务器，请检查 API 地址与网络' : null)
+      || '网络错误，请稍后重试'
   } finally {
     loading.value = false
   }

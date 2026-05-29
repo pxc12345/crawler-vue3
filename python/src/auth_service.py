@@ -25,6 +25,12 @@ class AuthService:
     def verify_password(self, password: str, password_hash: str) -> bool:
         return bcrypt.checkpw(password.encode('utf-8'), password_hash.encode('utf-8'))
 
+    def _token_str(self, token) -> str:
+        """PyJWT 在部分环境下返回 bytes，需转为 str 才能被 jsonify 序列化。"""
+        if isinstance(token, bytes):
+            return token.decode('utf-8')
+        return str(token)
+
     def create_access_token(self, user_id: int, username: str) -> str:
         expire = datetime.utcnow() + timedelta(hours=self.ACCESS_TOKEN_EXPIRE_HOURS)
         payload = {
@@ -33,7 +39,7 @@ class AuthService:
             'type': 'access',
             'exp': expire
         }
-        return jwt.encode(payload, self.SECRET_KEY, algorithm=self.ALGORITHM)
+        return self._token_str(jwt.encode(payload, self.SECRET_KEY, algorithm=self.ALGORITHM))
 
     def create_refresh_token(self, user_id: int, username: str) -> str:
         expire = datetime.utcnow() + timedelta(days=self.REFRESH_TOKEN_EXPIRE_DAYS)
@@ -43,7 +49,7 @@ class AuthService:
             'type': 'refresh',
             'exp': expire
         }
-        return jwt.encode(payload, self.SECRET_KEY, algorithm=self.ALGORITHM)
+        return self._token_str(jwt.encode(payload, self.SECRET_KEY, algorithm=self.ALGORITHM))
 
     def decode_token(self, token: str) -> dict:
         try:

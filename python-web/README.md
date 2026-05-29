@@ -116,6 +116,12 @@ npm run build
 3. **时间显示偏差 8 小时**  
    确保后端为最新代码并已重启；前端会自动发送 `X-Timezone` 请求头。
 
+4. **本地能登录，部署后提示「登录失败」**  
+   - 打开 F12 → Network，看 `auth/login` 请求的 URL 是否为 `https://crawler-vue3.onrender.com/api/auth/login`（不是 `127.0.0.1` 或前端自己的域名）。  
+   - 看响应 JSON：`用户不存在` = 线上库无该账号（需在部署环境注册或确认 Render 的 `DB_*` 与本地一致）；`密码错误` = 账号存在但密码不对；`登录失败` + `error` 字段 = 服务端异常（多为数据库/证书未配置）。  
+   - Render 后端需配置与本地相同的 `DB_PASSWORD`、`DB_CA_PATH`（或 `certs/isrgrootx1.pem` 随代码部署）。  
+   - 前端构建时需带上 `VITE_API_BASE_URL=https://crawler-vue3.onrender.com/api`。
+
 ## 相关文档
 
 - 系统内使用说明：登录后访问 **使用说明** 页面
