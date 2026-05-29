@@ -1,75 +1,122 @@
-# 学生管理系统 - Vue3 前端
+# CrawlMaster 爬虫管理系统 - 前端
 
-基于 Vue 3 + Vite 构建的学生管理系统前端。
+基于 **Vue 3 + Vite + Element Plus** 的爬虫任务管理前端，与 `python` 目录下的 Flask 后端配合使用。
 
 ## 技术栈
 
-- **Vue 3** - 渐进式JavaScript框架
-- **Vite** - 下一代前端构建工具
-- **Fetch API** - 与后端通信
+- Vue 3、Vue Router、Pinia
+- Vite 4
+- Element Plus
+- Axios
 
 ## 项目结构
 
 ```
 python-web/
+├── .env                 # API 地址配置（本地 / 远程切换，见下文）
+├── .env.example         # 配置模板
 ├── src/
-│   ├── api/
-│   │   └── student.js      # API调用模块
-│   ├── components/
-│   │   ├── Statistics.vue   # 统计组件
-│   │   └── StudentForm.vue  # 表单组件
-│   ├── App.vue             # 主组件
-│   ├── main.js             # 入口文件
-│   └── style.css           # 全局样式
-├── index.html               # HTML入口
-├── package.json             # 项目配置
-├── vite.config.js          # Vite配置
-├── start.bat               # Windows启动脚本
-└── start.sh                # Mac/Linux启动脚本
+│   ├── api/             # 接口封装
+│   ├── components/      # 公共组件
+│   ├── config/api.js    # API 基址解析
+│   ├── views/           # 页面（任务、数据、监控等）
+│   └── router/          # 路由
+├── vite.config.js       # 开发服务器与代理
+├── start.bat            # Windows 启动脚本
+└── start.sh             # Mac/Linux 启动脚本
 ```
 
 ## 快速开始
 
-### 1. 安装 Node.js
+### 1. 安装依赖
 
-下载并安装: https://nodejs.org/
+```bash
+cd python-web
+npm install
+```
 
-### 2. 启动后端
+### 2. 配置 API 地址
+
+编辑 **`python-web/.env`**（仅此一个文件，注释切换即可）：
+
+```env
+# 远程 Render 后端（默认）
+VITE_API_BASE_URL=https://crawler-vue3.onrender.com/api
+
+# 本地 Flask 后端（联调时启用）
+# VITE_API_BASE_URL=http://127.0.0.1:5000/api
+```
+
+| 场景 | 操作 |
+|------|------|
+| 使用**远程**后端 | 保留远程行有效，本地行注释 |
+| 使用**本地**后端 | 注释远程行，取消本地行注释 |
+| 修改后生效 | **重启** `npm run dev`，浏览器硬刷新 |
+
+> **注意**：不要创建 `.env.local`，Vite 会优先读取它并覆盖 `.env` 中的配置。
+
+**如何判断当前连的是哪套后端？**  
+打开浏览器 F12 → Network，查看接口完整 URL：
+
+- `https://crawler-vue3.onrender.com/api/...` → 远程
+- `http://127.0.0.1:5000/api/...` → 本地直连
+- `http://localhost:3000/api/...` → 本地代理（未配置 `VITE_API_BASE_URL` 时）
+
+### 3. 启动本地后端（仅本地联调需要）
 
 ```bash
 cd ../python
 python app.py
 ```
 
-后端地址: http://127.0.0.1:5000
+默认地址：`http://127.0.0.1:5000`
 
-### 3. 启动前端
+### 4. 启动前端
 
-**Windows:**
 ```bash
-双击 start.bat
-```
-
-**或手动启动:**
-```bash
-npm install
 npm run dev
 ```
 
-前端地址: http://localhost:3000
+访问：**http://localhost:3000**
 
-## 功能列表
+Windows 也可双击 `start.bat`。
 
-- ✅ 查看所有学生
-- ✅ 搜索学生
-- ✅ 添加学生
-- ✅ 编辑学生
-- ✅ 删除学生
-- ✅ 查看统计信息（总数、平均年龄、平均成绩等）
-- ✅ 实时刷新
+## 主要功能
 
-## 注意事项
+- 任务管理：创建、启动、重新启动、停止、编辑、删除
+- 任务模板：保存与复用采集配置
+- 数据预览、清洗、导出
+- 代理池、反爬、告警、系统监控与日志
+- 多主题、使用说明（导航栏「使用说明」）
 
-1. 确保 **Python 后端** 已启动在 5000 端口
-2. 前端默认连接: http://127.0.0.1:5000
-3. 如果端口被占用，修改 `vite.config.js` 中的 port
+## 任务操作说明
+
+| 按钮 | 说明 |
+|------|------|
+| **启动** | 新任务直接运行；已运行过的任务会复制为新任务记录再启动 |
+| **重新启动** | 在当前任务上再次执行，不新建任务记录 |
+| **停止** | 停止运行中的任务 |
+
+## 构建与部署
+
+```bash
+npm run build
+```
+
+构建产物在 `dist/`。部署到 Render 等平台时，可在平台环境变量中设置 `VITE_API_BASE_URL` 覆盖 `.env`。
+
+## 常见问题
+
+1. **改了 `.env` 仍连本地**  
+   检查是否存在 `.env.local` 并删除；确认已重启 dev 服务。
+
+2. **跨域错误**  
+   远程后端需在 `python/.env` 的 `CORS_ORIGINS` 中放行前端域名。
+
+3. **时间显示偏差 8 小时**  
+   确保后端为最新代码并已重启；前端会自动发送 `X-Timezone` 请求头。
+
+## 相关文档
+
+- 系统内使用说明：登录后访问 **使用说明** 页面
+- 后端环境变量：见 `python/.env.example`

@@ -29,10 +29,10 @@ echo ====================================
 echo   启动开发服务器...
 echo ====================================
 echo.
-echo 前端地址: http://localhost:5173
-echo 后端地址: http://127.0.0.1:5000
+echo 前端地址: http://localhost:3000
+echo API 地址: 见 python-web\.env 配置（远程/本地）
 echo.
-echo 确保后端已启动 (python ^.\..\python\auth_server.py)
+echo 本地联调时先启动后端: cd ..\python ^&^& python app.py
 echo.
 echo 按 Ctrl+C 停止服务
 echo.

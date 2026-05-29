@@ -106,7 +106,7 @@
                       </svg>
                       <span>系统架构概览</span>
                     </div>
-                    <p>CrawlMaster 采用前后端分离架构，前端基于 <strong>Vue 3 + Element Plus</strong> 构建，后端基于 <strong>Python FastAPI</strong>。系统包含任务管理、数据管理、代理管理、系统监控四大核心模块，提供从任务创建到数据导出的完整工作流。任务模板支持保存和复用常用配置，代理池管理支持多代理组配置，系统日志记录所有运行详情。</p>
+                    <p>CrawlMaster 采用前后端分离架构，前端基于 <strong>Vue 3 + Element Plus</strong> 构建，后端基于 <strong>Python Flask</strong>。系统包含任务管理、数据管理、代理管理、系统监控四大核心模块，提供从任务创建到数据导出的完整工作流。任务模板支持保存和复用常用配置，代理池管理支持多代理组配置，系统日志记录所有运行详情。</p>
                   </div>
                 </template>
 
@@ -196,26 +196,33 @@
                     <div class="step-item">
                       <div class="step-marker">2</div>
                       <div class="step-content">
-                        <h4>启动单个任务</h4>
-                        <p>在任务列表中，找到需要启动的任务，点击该行右侧的 <strong>「启动」</strong> 按钮（▶ 播放图标）。任务状态将从「已停止」变为「运行中」，系统开始按照配置的规则进行数据采集。</p>
+                        <h4>查看任务卡片信息</h4>
+                        <p>每个任务卡片上方会展示关键信息：<strong>任务 ID</strong>、<strong>目标 URL</strong>、<strong>更新/创建时间</strong>（有更新记录显示「更新于」，刚创建的任务显示「创建于」）、<strong>耗时</strong>、<strong>数据量</strong>、<strong>爬取模式</strong>、<strong>页数</strong>、<strong>并发</strong>、<strong>调度周期</strong>、<strong>请求间隔</strong>及<strong>代理组</strong>等；<strong>成功率</strong>仍以进度条形式展示在下方。</p>
                       </div>
                     </div>
                     <div class="step-item">
                       <div class="step-marker">3</div>
                       <div class="step-content">
-                        <h4>批量操作</h4>
-                        <p>通过列表顶部的多选框勾选多个任务，然后点击 <strong>「批量启动」</strong> 或 <strong>「批量停止」</strong> 按钮，可同时对多个任务执行操作。</p>
+                        <h4>启动任务</h4>
+                        <p>点击任务卡片上的 <strong>「启动」</strong> 按钮。新任务将直接开始运行；对于已经执行过的任务，启动时会复制为新任务记录再运行，以保留历史执行数据。</p>
                       </div>
                     </div>
                     <div class="step-item">
                       <div class="step-marker">4</div>
                       <div class="step-content">
-                        <h4>停止任务</h4>
-                        <p>在任务列表中，找到运行中的任务，点击该行右侧的 <strong>「停止」</strong> 按钮（■ 停止图标）。任务将立即停止采集，已采集的数据不会丢失。</p>
+                        <h4>重新启动任务</h4>
+                        <p>对于已完成或失败的任务，除「启动」外还会显示 <strong>「重新启动」</strong> 按钮。重新启动会在<strong>当前任务</strong>上再次执行采集，不会新建任务记录，适合在同一任务上快速重跑。</p>
                       </div>
                     </div>
                     <div class="step-item">
                       <div class="step-marker">5</div>
+                      <div class="step-content">
+                        <h4>停止任务</h4>
+                        <p>运行中的任务可点击 <strong>「停止」</strong> 按钮立即终止采集，已采集的数据不会丢失。</p>
+                      </div>
+                    </div>
+                    <div class="step-item">
+                      <div class="step-marker">6</div>
                       <div class="step-content">
                         <h4>查看任务详情</h4>
                         <p>点击任务名称，进入 <strong>任务详情页</strong>，可查看任务的完整配置信息、采集进度、已采集数据量、运行日志、版本历史等详细数据。</p>
@@ -231,8 +238,8 @@
                     </div>
                     <div class="status-card status-stopped">
                       <span class="status-dot stopped"></span>
-                      <span class="status-label">已停止</span>
-                      <span class="status-desc">任务未运行或已手动停止</span>
+                      <span class="status-label">待执行</span>
+                      <span class="status-desc">任务已创建，等待启动</span>
                     </div>
                     <div class="status-card status-error">
                       <span class="status-dot error"></span>
@@ -527,6 +534,59 @@
                     </div>
                   </div>
                 </template>
+
+                <!-- 开发与部署 -->
+                <template v-if="section.id === 'dev-env'">
+                  <div class="step-list">
+                    <div class="step-item">
+                      <div class="step-marker">1</div>
+                      <div class="step-content">
+                        <h4>统一配置文件</h4>
+                        <p>前端 API 地址在 <strong>python-web/.env</strong> 中配置，远程与本地只需注释切换，无需修改多个文件。</p>
+                        <div class="step-detail-list">
+                          <p><strong>远程后端</strong>：<code>VITE_API_BASE_URL=https://crawler-vue3.onrender.com/api</code></p>
+                          <p><strong>本地后端</strong>：<code>VITE_API_BASE_URL=http://127.0.0.1:5000/api</code></p>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="step-item">
+                      <div class="step-marker">2</div>
+                      <div class="step-content">
+                        <h4>切换后重启前端</h4>
+                        <p>修改 <code>.env</code> 后必须<strong>重启</strong> <code>npm run dev</code>，并在浏览器中硬刷新（Ctrl+Shift+R），否则可能仍使用旧地址。</p>
+                      </div>
+                    </div>
+                    <div class="step-item">
+                      <div class="step-marker">3</div>
+                      <div class="step-content">
+                        <h4>确认当前连接的后端</h4>
+                        <p>打开浏览器开发者工具 → Network，查看接口完整 URL：</p>
+                        <div class="step-detail-list">
+                          <p>以 <code>crawler-vue3.onrender.com</code> 开头 → 远程后端</p>
+                          <p>以 <code>127.0.0.1:5000</code> 开头 → 本地后端</p>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="step-item">
+                      <div class="step-marker">4</div>
+                      <div class="step-content">
+                        <h4>本地联调启动顺序</h4>
+                        <p>先启动后端 <code>cd python && python app.py</code>，再启动前端 <code>cd python-web && npm run dev</code>，访问 <code>http://localhost:3000</code>。</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="tip-block">
+                    <div class="tip-icon">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>
+                      </svg>
+                    </div>
+                    <div class="tip-content">
+                      <strong>注意</strong>：请勿创建 <code>.env.local</code>，Vite 会优先读取它并覆盖 <code>.env</code> 中的配置，导致切换无效。
+                    </div>
+                  </div>
+                </template>
               </div>
             </transition>
           </div>
@@ -548,7 +608,8 @@ const sections = [
   { id: 'data-export', num: '05', title: '数据查看与导出', intro: '采集完成的数据可以进行预览、清洗和导出。以下是数据处理全流程的操作步骤：' },
   { id: 'logs', num: '06', title: '日志查看', intro: '系统日志和任务日志记录了运行的详细信息，是排查问题和监控状态的重要工具。' },
   { id: 'settings', num: '07', title: '系统设置使用', intro: '系统设置模块提供个人资料、安全、通知等个性化配置功能。以下是各项设置的操作步骤：' },
-  { id: 'theme', num: '08', title: '主题切换使用', intro: '系统内置多套精心设计的主题方案，支持一键切换，满足不同视觉偏好。以下是主题切换的操作步骤：' }
+  { id: 'theme', num: '08', title: '主题切换使用', intro: '系统内置多套精心设计的主题方案，支持一键切换，满足不同视觉偏好。以下是主题切换的操作步骤：' },
+  { id: 'dev-env', num: '09', title: '开发与 API 配置', intro: '本地开发与远程部署时，通过单一配置文件切换后端地址。以下是环境配置说明：' }
 ]
 
 const expandedSections = ref(new Set(['intro']))

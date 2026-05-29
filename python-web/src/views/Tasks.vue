@@ -86,8 +86,11 @@
                 </svg>
               </div>
               <div class="task-info">
-                <h3 class="task-name">{{ task.name }}</h3>
-                <p class="task-url">{{ task.url }}</p>
+                <div class="task-title-row">
+                  <h3 class="task-name">{{ task.name }}</h3>
+                  <span class="task-id">#{{ task.id }}</span>
+                </div>
+                <p class="task-url" :title="task.url">{{ task.url || '未设置目标 URL' }}</p>
               </div>
             </div>
             <div class="task-card-right">
@@ -98,40 +101,67 @@
             </div>
           </div>
 
-          <div class="task-card-meta">
-            <div v-if="task.createdAt" class="task-meta-item">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
-                <line x1="16" y1="2" x2="16" y2="6"/>
-                <line x1="8" y1="2" x2="8" y2="6"/>
-                <line x1="3" y1="10" x2="21" y2="10"/>
-              </svg>
-              <span>{{ task.createdAt }}</span>
-            </div>
-            <div class="task-meta-item">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                <circle cx="12" cy="12" r="10"/>
-                <polyline points="12 6 12 12 16 14"/>
-              </svg>
-              <span>{{ getRealtimeExecutionTime(task) }}</span>
-            </div>
-            <div class="task-meta-item">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M18 20V10"/>
-                <path d="M12 20V4"/>
-                <path d="M6 20v-6"/>
-              </svg>
-              <span>{{ getRealtimeDataCount(task) }} 条数据</span>
+          <div class="task-card-summary">
+            <div class="task-info-grid">
+              <div v-if="getTaskTimeInfo(task).value" class="task-info-item">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+                  <line x1="16" y1="2" x2="16" y2="6"/>
+                  <line x1="8" y1="2" x2="8" y2="6"/>
+                  <line x1="3" y1="10" x2="21" y2="10"/>
+                </svg>
+                <span>{{ getTaskTimeInfo(task).label }} {{ getTaskTimeInfo(task).value }}</span>
+              </div>
+              <div class="task-info-item">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                  <circle cx="12" cy="12" r="10"/>
+                  <polyline points="12 6 12 12 16 14"/>
+                </svg>
+                <span>耗时 {{ getRealtimeExecutionTime(task) }}</span>
+              </div>
+              <div class="task-info-item">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M18 20V10"/>
+                  <path d="M12 20V4"/>
+                  <path d="M6 20v-6"/>
+                </svg>
+                <span>{{ getRealtimeDataCount(task) }} 条数据</span>
+              </div>
+              <div class="task-info-item">
+                <span class="info-tag">{{ crawlModeLabel(task.crawlMode) }}</span>
+              </div>
+              <div class="task-info-item">
+                <span class="info-tag">{{ task.totalPages }} 页</span>
+              </div>
+              <div class="task-info-item">
+                <span class="info-tag">并发 {{ task.concurrency }}</span>
+              </div>
+              <div v-if="task.scheduleMinutes > 0" class="task-info-item">
+                <span class="info-tag">周期 {{ task.scheduleMinutes }} 分钟</span>
+              </div>
+              <div class="task-info-item">
+                <span class="info-tag">间隔 {{ task.requestIntervalSeconds }} 秒</span>
+              </div>
+              <div v-if="task.proxyGroup" class="task-info-item">
+                <span class="info-tag">代理 {{ task.proxyGroup }}</span>
+              </div>
             </div>
           </div>
 
           <div class="task-card-progress">
             <div class="progress-header">
               <span class="progress-label">成功率</span>
-              <span class="progress-value" :class="task.status === 'completed' ? 'high' : task.status === 'failed' ? 'low' : getRealtimeSuccessRate(task) >= 90 ? 'high' : getRealtimeSuccessRate(task) >= 60 ? 'mid' : 'low'">{{ getRealtimeSuccessRate(task) }}%</span>
+              <span
+                class="progress-value"
+                :class="task.status === 'completed' ? 'high' : task.status === 'failed' ? 'low' : getRealtimeSuccessRate(task) >= 90 ? 'high' : getRealtimeSuccessRate(task) >= 60 ? 'mid' : 'low'"
+              >{{ getRealtimeSuccessRate(task) }}%</span>
             </div>
             <div class="progress-bar">
-              <div class="progress-fill" :class="task.status === 'completed' ? 'high' : task.status === 'failed' ? 'low' : getRealtimeSuccessRate(task) >= 90 ? 'high' : getRealtimeSuccessRate(task) >= 60 ? 'mid' : 'low'" :style="{ width: getRealtimeSuccessRate(task) + '%' }"></div>
+              <div
+                class="progress-fill"
+                :class="task.status === 'completed' ? 'high' : task.status === 'failed' ? 'low' : getRealtimeSuccessRate(task) >= 90 ? 'high' : getRealtimeSuccessRate(task) >= 60 ? 'mid' : 'low'"
+                :style="{ width: getRealtimeSuccessRate(task) + '%' }"
+              ></div>
             </div>
             <div v-if="displayTaskError(task)" class="error-tip" :title="task._errorMessage">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -219,6 +249,7 @@ import NavBar from '../components/NavBar.vue'
 import { taskAPI } from '../api/task'
 import { crawlerAPI } from '../api/crawler'
 import { buildTaskRunCreatePayload, shouldCloneTaskBeforeStart } from '../utils/taskCopy'
+import { cronToMinutes } from '../utils/templateConfig'
 
 const router = useRouter()
 const loading = ref(true)
@@ -243,7 +274,9 @@ const statusOptions = [
 ]
 
 const statusLabelMap = { running: '运行中', pending: '待执行', completed: '已完成', failed: '失败' }
+const crawlModeLabelMap = { link: '链接模式', image: '图片模式', mixed: '混合模式' }
 function statusLabel(status) { return statusLabelMap[status] || status }
+function crawlModeLabel(mode) { return crawlModeLabelMap[mode] || mode || '链接模式' }
 
 // 监听筛选条件变化，自动重新获取数据
 watch(activeStatus, () => {
@@ -490,6 +523,13 @@ function mapTaskFromApi(item) {
     name: item.name,
     url: item.target_url || item.url || '',
     createdAt: item.created_at || '',
+    updatedAt: item.updated_at || '',
+    crawlMode: config.crawl_mode || 'link',
+    totalPages: config.total_pages || item.total_pages || 1,
+    concurrency: item.concurrency || config.concurrency || 1,
+    scheduleMinutes: cronToMinutes(config.cron_expr || item.cron_expr || ''),
+    requestIntervalSeconds: Number(config.interval_seconds ?? item.interval_seconds ?? 3) || 3,
+    proxyGroup: item.proxy_group || config.proxy_group || '',
     status: taskStatus,
     config,
     data_count: item.data_count || liveStatus.collected_count || 0,
@@ -506,6 +546,15 @@ function mapTaskFromApi(item) {
     favorite: item.is_favorite === 1 || item.is_favorite === true || item.favorite === true,
     is_favorite: item.is_favorite === 1 || item.is_favorite === true || item.favorite === true
   }
+}
+
+function getTaskTimeInfo(task) {
+  const created = (task.createdAt || '').trim()
+  const updated = (task.updatedAt || '').trim()
+  if (!updated || (created && updated === created)) {
+    return { label: '创建于', value: created || '—' }
+  }
+  return { label: '更新于', value: updated }
 }
 
 // 计算实时执行时间（依赖 tick 触发每秒重算）
@@ -947,12 +996,33 @@ onUnmounted(() => {
   min-width: 0;
 }
 
+.task-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+  min-width: 0;
+}
+
 .task-name {
   font-size: 15px;
   font-weight: 700;
   color: var(--text-primary);
-  margin-bottom: 4px;
   letter-spacing: -0.2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.task-id {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border-color);
 }
 
 .task-url {
@@ -962,6 +1032,107 @@ onUnmounted(() => {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+.task-card-summary {
+  margin-bottom: 14px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border-color);
+}
+
+.task-info-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+}
+
+.task-info-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.task-info-item svg {
+  width: 14px;
+  height: 14px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.info-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border-color);
+}
+
+.info-tag.tag-high {
+  color: #34d399;
+  border-color: rgba(16, 185, 129, 0.25);
+  background: rgba(16, 185, 129, 0.08);
+}
+
+.info-tag.tag-mid {
+  color: #fbbf24;
+  border-color: rgba(245, 158, 11, 0.25);
+  background: rgba(245, 158, 11, 0.08);
+}
+
+.info-tag.tag-low {
+  color: #f87171;
+  border-color: rgba(239, 68, 68, 0.25);
+  background: rgba(239, 68, 68, 0.08);
+}
+
+.task-card-progress {
+  margin-bottom: 16px;
+}
+
+.progress-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.progress-label {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.progress-value {
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.progress-value.high { color: #34d399; }
+.progress-value.mid { color: #fbbf24; }
+.progress-value.low { color: #f87171; }
+
+.progress-bar {
+  height: 5px;
+  background: var(--border-color);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.6s ease;
+}
+
+.progress-fill.high { background: linear-gradient(90deg, #34d399, #10b981); }
+.progress-fill.mid { background: linear-gradient(90deg, #fbbf24, #f59e0b); }
+.progress-fill.low { background: linear-gradient(90deg, #f87171, #ef4444); }
 
 .task-status-tag {
   display: inline-flex;
@@ -1039,67 +1210,13 @@ onUnmounted(() => {
   50% { opacity: 0.4; }
 }
 
-.task-card-meta {
-  display: flex;
-  gap: 24px;
+.task-card-error {
   margin-bottom: 14px;
 }
 
-.task-meta-item {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  color: var(--text-secondary);
+.task-card-progress .error-tip {
+  margin-top: 8px;
 }
-
-.task-meta-item svg {
-  width: 14px;
-  height: 14px;
-  color: var(--text-muted);
-}
-
-.task-card-progress {
-  margin-bottom: 16px;
-}
-
-.progress-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 6px;
-}
-
-.progress-label {
-  font-size: 11px;
-  color: var(--text-muted);
-}
-
-.progress-value {
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.progress-value.high { color: #34d399; }
-.progress-value.mid { color: #fbbf24; }
-.progress-value.low { color: #f87171; }
-
-.progress-bar {
-  height: 5px;
-  background: var(--border-color);
-  border-radius: 3px;
-  overflow: hidden;
-}
-
-.progress-fill {
-  height: 100%;
-  border-radius: 3px;
-  transition: width 0.6s ease;
-}
-
-.progress-fill.high { background: linear-gradient(90deg, #34d399, #10b981); }
-.progress-fill.mid { background: linear-gradient(90deg, #fbbf24, #f59e0b); }
-.progress-fill.low { background: linear-gradient(90deg, #f87171, #ef4444); }
 
 .error-tip {
   display: flex;
