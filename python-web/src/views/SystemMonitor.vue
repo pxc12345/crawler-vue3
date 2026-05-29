@@ -279,13 +279,13 @@ onUnmounted(() => {
 }
 .page-title {
   font-size: 26px; font-weight: 700;
-  color: rgba(255, 255, 255, 0.9); letter-spacing: -0.5px;
+  color: var(--text-primary); letter-spacing: -0.5px;
 }
 .header-right { display: flex; align-items: center; }
 .refresh-tag {
   display: inline-flex; align-items: center; gap: 5px;
   font-size: 12px; font-weight: 500;
-  color: rgba(255,255,255,0.3); transition: color 0.3s ease;
+  color: var(--text-muted); transition: color 0.3s ease;
 }
 .refresh-tag svg { width: 14px; height: 14px; }
 .refresh-tag.refreshing { color: var(--active-color); }
@@ -304,8 +304,8 @@ onUnmounted(() => {
   text-align: center; padding: 20px 12px;
 }
 .gauge-info { margin-bottom: 8px; }
-.gauge-label { font-size: 11px; color: rgba(255,255,255,0.35); text-transform: uppercase; letter-spacing: 0.5px; display: block; margin-bottom: 4px; }
-.gauge-value { font-size: 32px; font-weight: 700; color: rgba(255,255,255,0.85); }
+.gauge-label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; display: block; margin-bottom: 4px; }
+.gauge-value { font-size: 32px; font-weight: 700; color: var(--text-primary); }
 .gauge-ring { position: relative; display: inline-block; }
 .gauge-ring svg { width: 120px; height: 120px; }
 .gauge-arc { transition: stroke-dashoffset 0.8s ease, stroke 0.8s ease; }
@@ -315,7 +315,7 @@ onUnmounted(() => {
 .status-danger { background: rgba(248,113,113,0.12); color: #f87171; }
 .section-title {
   font-size: 15px; font-weight: 600;
-  color: rgba(255, 255, 255, 0.7);
+  color: var(--text-secondary);
   margin-bottom: 16px;
 }
 .chart-wrap { }
@@ -331,7 +331,7 @@ onUnmounted(() => {
   padding: 12px 16px; text-align: left; font-weight: 600;
   color: var(--text-muted); font-size: 11px; text-transform: uppercase;
   letter-spacing: 0.4px; border-bottom: 1px solid var(--border-color);
-  white-space: nowrap; background: rgba(0,0,0,0.15);
+  white-space: nowrap; background: var(--border-color);
 }
 .data-table th.sortable { cursor: pointer; user-select: none; }
 .data-table th.sortable:hover { color: var(--text-secondary); }
@@ -341,10 +341,10 @@ onUnmounted(() => {
   border-bottom: 1px solid rgba(255,255,255,0.03);
 }
 .data-table tbody tr:hover { background: rgba(var(--accent-rgb), 0.04); }
-.task-name { font-weight: 500; color: rgba(255,255,255,0.75); }
+.task-name { font-weight: 500; color: var(--text-secondary); }
 .usage-bar {
   display: flex; align-items: center; gap: 8px;
-  position: relative; height: 22px; background: rgba(255,255,255,0.04);
+  position: relative; height: 22px; background: var(--border-color);
   border-radius: 6px; overflow: hidden; min-width: 100px;
 }
 .usage-fill {
@@ -352,24 +352,24 @@ onUnmounted(() => {
 }
 .cpu-fill { background: rgba(76,110,245,0.4); }
 .mem-fill { background: rgba(124,58,237,0.4); }
-.usage-text { position: absolute; right: 8px; font-size: 11px; font-weight: 600; color: rgba(255,255,255,0.5); }
+.usage-text { position: absolute; right: 8px; font-size: 11px; font-weight: 600; color: var(--text-muted); }
 .status-tag {
   font-size: 11px; font-weight: 600; padding: 3px 10px; border-radius: 6px;
 }
 .s-running { background: rgba(52,211,153,0.12); color: #34d399; }
 .s-idle { background: rgba(251,191,36,0.12); color: #fbbf24; }
-.s-stopped { background: rgba(255,255,255,0.05); color: rgba(255,255,255,0.3); }
+.s-stopped { background: var(--border-color); color: var(--text-muted); }
 .btn-sm {
   padding: 5px 12px; font-size: 11px; font-weight: 500;
   background: rgba(var(--accent-rgb), 0.1); border: 1px solid rgba(var(--accent-rgb), 0.15);
-  border-radius: 6px; color: var(--accent-color); cursor: pointer; transition: all 0.2s ease;
+  border-radius: 6px; color: var(--accent-primary); cursor: pointer; transition: all 0.2s ease;
 }
 .btn-sm:hover { background: rgba(var(--accent-rgb), 0.2); }
 .thresholds { display: flex; gap: 24px; align-items: flex-end; flex-wrap: wrap; }
 .threshold-group { flex: 1; min-width: 160px; }
 .filter-label {
   display: block; font-size: 12px; font-weight: 500;
-  color: rgba(255,255,255,0.35); margin-bottom: 6px;
+  color: var(--text-muted); margin-bottom: 6px;
 }
 .slider {
   width: 100%; accent-color: var(--accent-primary); cursor: pointer;

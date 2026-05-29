@@ -197,7 +197,12 @@
 
         <div class="chart-section">
           <div class="chart-card">
-            <h3 class="chart-title">今日采集趋势</h3>
+            <h3 class="chart-title">
+              今日采集趋势
+              <span v-if="statsTime" class="chart-time">
+                更新于 {{ statsTime }}（{{ statsTimezone }}）
+              </span>
+            </h3>
             <div class="chart-container">
               <svg class="trend-chart" viewBox="0 0 600 140" preserveAspectRatio="none">
                 <defs>
@@ -286,7 +291,9 @@ const todayStats = reactive({
 const unreadAlertCount = ref(0)
 
 const chartPoints = ref([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
-const chartLabels = ['00:00', '03:00', '06:00', '09:00', '12:00', '15:00', '18:00', '21:00']
+const chartLabels = ref(['00:00', '03:00', '06:00', '09:00', '12:00', '15:00', '18:00', '21:00'])
+const statsTime = ref('')
+const statsTimezone = ref('Asia/Shanghai')
 
 const chartLinePath = computed(() => {
   const w = 600
@@ -378,6 +385,15 @@ async function fetchDashboardStats() {
       todayStats.tasks = String((data.running_tasks || 0) + (data.pending_tasks || 0))
       if (data.today_trend && Array.isArray(data.today_trend)) {
         chartPoints.value = data.today_trend
+      }
+      if (data.hour_labels && Array.isArray(data.hour_labels) && data.hour_labels.length === 24) {
+        chartLabels.value = data.hour_labels.filter((_, index) => index % 3 === 0)
+      }
+      if (data.stats_time) {
+        statsTime.value = data.stats_time
+      }
+      if (data.timezone) {
+        statsTimezone.value = data.timezone
       }
     }
 
@@ -921,6 +937,16 @@ onMounted(() => {
   font-weight: 600;
   color: var(--text-secondary);
   margin-bottom: 16px;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.chart-time {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--text-tertiary, #888);
 }
 
 .chart-container {

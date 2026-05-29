@@ -1,8 +1,9 @@
 import time
 import pymysql
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from db_settings import PYMYSQL_CONFIG
+from src.datetime_utils import now_utc, now_utc_str
 
 
 class NotificationDB:
@@ -133,7 +134,7 @@ class NotificationDB:
 
     def create_user(self, email=None, phone=None, password_hash=None):
         self._ensure_connection()
-        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        now = now_utc_str()
         with self.connection.cursor() as cursor:
             cursor.execute(
                 "INSERT INTO users (email, phone, password_hash, created_at, updated_at) VALUES (%s, %s, %s, %s, %s)",
@@ -178,7 +179,7 @@ class NotificationDB:
 
     def save_verification_code(self, user_id, code, code_type, target, expires_at):
         self._ensure_connection()
-        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        now = now_utc_str()
         with self.connection.cursor() as cursor:
             cursor.execute(
                 "INSERT INTO verification_codes (user_id, code, code_type, target, expires_at, created_at) VALUES (%s, %s, %s, %s, %s, %s)",
@@ -198,7 +199,7 @@ class NotificationDB:
             row = cursor.fetchone()
             if row:
                 expires_at = row[5]
-                if expires_at > datetime.now():
+                if expires_at > now_utc():
                     return {
                         "id": row[0],
                         "user_id": row[1],
@@ -285,7 +286,7 @@ class NotificationDB:
 
     def update_user_profile(self, user_id, nickname=None, avatar_url=None, bio=None):
         self._ensure_connection()
-        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        now = now_utc_str()
         fields = []
         params = []
         if nickname is not None:
@@ -312,7 +313,7 @@ class NotificationDB:
 
     def update_user_password(self, user_id, password_hash):
         self._ensure_connection()
-        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        now = now_utc_str()
         with self.connection.cursor() as cursor:
             cursor.execute(
                 "UPDATE users SET password_hash = %s, updated_at = %s WHERE id = %s",
@@ -325,7 +326,7 @@ class NotificationDB:
         with self.connection.cursor() as cursor:
             cursor.execute(
                 "UPDATE users SET login_attempts = login_attempts + 1, updated_at = %s WHERE id = %s",
-                (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), user_id)
+                (now_utc_str(), user_id)
             )
             self.connection.commit()
 
@@ -334,7 +335,7 @@ class NotificationDB:
         with self.connection.cursor() as cursor:
             cursor.execute(
                 "UPDATE users SET login_attempts = 0, locked_until = NULL, updated_at = %s WHERE id = %s",
-                (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), user_id)
+                (now_utc_str(), user_id)
             )
             self.connection.commit()
 
@@ -343,7 +344,7 @@ class NotificationDB:
         with self.connection.cursor() as cursor:
             cursor.execute(
                 "UPDATE users SET locked_until = %s, updated_at = %s WHERE id = %s",
-                (lock_until.strftime("%Y-%m-%d %H:%M:%S"), datetime.now().strftime("%Y-%m-%d %H:%M:%S"), user_id)
+                (lock_until.strftime("%Y-%m-%d %H:%M:%S"), now_utc_str(), user_id)
             )
             self.connection.commit()
 
@@ -352,13 +353,13 @@ class NotificationDB:
         with self.connection.cursor() as cursor:
             cursor.execute(
                 "UPDATE users SET last_login_at = %s, updated_at = %s WHERE id = %s",
-                (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), datetime.now().strftime("%Y-%m-%d %H:%M:%S"), user_id)
+                (now_utc_str(), now_utc_str(), user_id)
             )
             self.connection.commit()
 
     def add_token_to_blacklist(self, token, expires_at):
         self._ensure_connection()
-        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        now = now_utc_str()
         with self.connection.cursor() as cursor:
             cursor.execute(
                 "INSERT INTO token_blacklist (token, expires_at, created_at) VALUES (%s, %s, %s)",
@@ -370,14 +371,14 @@ class NotificationDB:
         try:
             self._connect()  # 每次都创建新连接
             with self.connection.cursor() as cursor:
-                cursor.execute("SELECT id FROM token_blacklist WHERE token = %s AND expires_at > %s", (token, datetime.now()))
+                cursor.execute("SELECT id FROM token_blacklist WHERE token = %s AND expires_at > %s", (token, now_utc()))
                 return cursor.fetchone() is not None
         except Exception:
             return False  # 出错时跳过检查，不阻止请求
 
     def add_password_history(self, user_id, password_hash):
         self._ensure_connection()
-        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        now = now_utc_str()
         with self.connection.cursor() as cursor:
             cursor.execute(
                 "INSERT INTO password_history (user_id, password_hash, created_at) VALUES (%s, %s, %s)",
@@ -398,7 +399,7 @@ class NotificationDB:
 
     def add_audit_log(self, user_id, action, ip_address=None, user_agent=None, details=None):
         self._ensure_connection()
-        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        now = now_utc_str()
         with self.connection.cursor() as cursor:
             cursor.execute(
                 "INSERT INTO audit_logs (user_id, action, ip_address, user_agent, details, created_at) VALUES (%s, %s, %s, %s, %s, %s)",
@@ -408,7 +409,7 @@ class NotificationDB:
 
     def create_user_with_username(self, username, email=None, phone=None, password_hash=None):
         self._ensure_connection()
-        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        now = now_utc_str()
         with self.connection.cursor() as cursor:
             cursor.execute(
                 "INSERT INTO users (username, email, phone, password_hash, created_at, updated_at) VALUES (%s, %s, %s, %s, %s, %s)",

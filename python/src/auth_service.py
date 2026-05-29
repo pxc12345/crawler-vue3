@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 from functools import wraps
 from flask import request, jsonify
 from src.notification_db import notification_db
+from src.datetime_utils import now_utc
 
 
 class AuthService:
@@ -69,7 +70,7 @@ class AuthService:
             locked_until = user['locked_until']
             if isinstance(locked_until, str):
                 locked_until = datetime.strptime(locked_until, '%Y-%m-%d %H:%M:%S')
-            if locked_until > datetime.now():
+            if locked_until > now_utc():
                 return True
         return False
 
@@ -89,7 +90,7 @@ class AuthService:
             self.db.increment_login_attempts(user['id'])
             
             if user['login_attempts'] + 1 >= self.MAX_LOGIN_ATTEMPTS:
-                lock_until = datetime.now() + timedelta(minutes=self.LOCKOUT_MINUTES)
+                lock_until = now_utc() + timedelta(minutes=self.LOCKOUT_MINUTES)
                 self.db.lock_user(user['id'], lock_until)
                 return {'success': False, 'message': f'登录失败次数过多，账户已锁定{self.LOCKOUT_MINUTES}分钟', 'code': 'ACCOUNT_LOCKED'}
             

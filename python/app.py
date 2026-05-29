@@ -33,6 +33,23 @@ from flask_cors import CORS, cross_origin
 from src.auth_service import auth_service
 from src.notification_db import notification_db
 from src.notifications.verification_service import verification_service
+from src.datetime_utils import (
+    format_api_datetime,
+    format_config_for_api,
+    format_row_datetimes,
+    format_rows_datetimes,
+    format_task_for_api,
+    format_template_for_api,
+    now_utc_str,
+    setup_timezone_middleware,
+    TIMEZONE_HEADER,
+    get_request_timezone,
+    get_effective_timezone,
+    build_local_hour_labels,
+    parse_to_utc_naive,
+    API_DATETIME_FORMAT,
+    now_utc,
+)
 from crawler_engine import crawler_engine, get_engine_info, ENGINE_VERSION
 from crawler_db import crawler_db
 from task_db import task_db
@@ -49,6 +66,7 @@ import pymysql
 app = Flask(__name__)
 app.config["SQLALCHEMY_DATABASE_URI"] = SQLALCHEMY_DATABASE_URI
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+setup_timezone_middleware(app)
 
 # notification_db 模块内为硬编码配置，导入后切换为线上库并重连
 notification_db.db_config = dict(PYMYSQL_CONFIG)
@@ -70,38 +88,23 @@ def _cors_origins():
 
 _CORS_ORIGINS = _cors_origins()
 
+_CORS_ALLOW_HEADERS = ["Content-Type", "Authorization", "X-Timezone"]
 
-def _cors_allow_origin():
-    origin = request.headers.get("Origin")
-    if origin and origin in _CORS_ORIGINS:
-        return origin
-    return None
-
-
-# 全局 CORS 配置
-@app.before_request
-def handle_cors_preflight():
-    if request.method == 'OPTIONS':
-        response = app.make_response(('', 200))
-        allowed = _cors_allow_origin()
-        if allowed:
-            response.headers['Access-Control-Allow-Origin'] = allowed
-            response.headers['Access-Control-Allow-Credentials'] = 'true'
-        response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
-        response.headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
-        response.headers['Access-Control-Max-Age'] = '86400'
-        return response
-
-CORS(app, resources={
-    r"/api/.*": {
-        "origins": _CORS_ORIGINS,
-        "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-        "allow_headers": ["Content-Type", "Authorization"],
-        "supports_credentials": True,
-        "expose_headers": ["Content-Type", "Authorization"],
-        "max_age": 86400
-    }
-})
+CORS(
+    app,
+    resources={
+        r"/api/.*": {
+            "origins": _CORS_ORIGINS,
+            "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+            "allow_headers": _CORS_ALLOW_HEADERS,
+            "supports_credentials": True,
+            "expose_headers": ["Content-Type", "Authorization"],
+            "max_age": 86400,
+        }
+    },
+    allow_headers=_CORS_ALLOW_HEADERS,
+    supports_credentials=True,
+)
 
 crawler_db.connect()
 task_db.connect()
@@ -378,8 +381,8 @@ def get_profile():
                 'nickname': user.get('nickname', ''),
                 'avatar_url': user.get('avatar_url', ''),
                 'bio': user.get('bio', ''),
-                'last_login_at': user['last_login_at'],
-                'created_at': user['created_at']
+                'last_login_at': format_api_datetime(user['last_login_at']),
+                'created_at': format_api_datetime(user['created_at'])
             }
         }), 200
 
@@ -724,6 +727,7 @@ def task_list():
         engine_status = crawler_engine.get_status()
         engine_task_id = engine_status.get('task_id')
         for task in tasks:
+            format_task_for_api(task)
             if engine_task_id and str(task.get('id')) == str(engine_task_id):
                 task['crawler_status'] = engine_status
             else:
@@ -762,9 +766,10 @@ def task_create():
             }), 400
 
         if not task_type:
-            return jsonify({
-                'success': False, 'message': '请选择任务类型', 'code': 'MISSING_TYPE'
-            }), 400
+            if isinstance(config, dict):
+                task_type = (config.get('task_type') or 'crawler').strip()
+            else:
+                task_type = 'crawler'
 
         task_id = task_db.create(
             user_id=request.user_id,
@@ -851,6 +856,8 @@ def task_template_list():
             category=category.strip(),
             favorite_only=favorite_only
         )
+        for template in templates:
+            format_template_for_api(template)
 
         return jsonify({'success': True, 'data': templates}), 200
 
@@ -911,6 +918,7 @@ def task_template_use(template_id):
 
         task_db.increment_template_use_count(template_id, user_id=request.user_id)
         template = task_db.get_template_by_id(template_id, user_id=request.user_id)
+        format_template_for_api(template)
         return jsonify({
             'success': True, 'message': '已应用模板', 'data': template
         }), 200
@@ -963,6 +971,7 @@ def task_template_detail(template_id):
                 'success': False, 'message': '模板不存在', 'code': 'TEMPLATE_NOT_FOUND'
             }), 404
 
+        format_template_for_api(template)
         return jsonify({'success': True, 'data': template}), 200
 
     except Exception as e:
@@ -1011,6 +1020,7 @@ def task_template_update(template_id):
             }), 400
 
         updated = task_db.get_template_by_id(template_id, user_id=request.user_id)
+        format_template_for_api(updated)
         return jsonify({
             'success': True, 'message': '更新模板成功', 'data': updated
         }), 200
@@ -1055,6 +1065,8 @@ def task_detail(task_id):
             return jsonify({
                 'success': False, 'message': '任务不存在', 'code': 'TASK_NOT_FOUND'
             }), 404
+
+        format_task_for_api(task)
 
         # 合并爬虫引擎的实时状态
         engine_status = crawler_engine.get_status()
@@ -1135,6 +1147,7 @@ def task_delete(task_id):
 @app.route('/api/tasks/<task_id>/start', methods=['POST'])
 @auth_service.login_required
 def task_start(task_id):
+    """直接启动指定任务（任务复制由前端完成后再调用本接口）。"""
     try:
         task = task_db.get_by_id(task_id, user_id=request.user_id)
         if not task:
@@ -1142,18 +1155,27 @@ def task_start(task_id):
                 'success': False, 'message': '任务不存在', 'code': 'TASK_NOT_FOUND'
             }), 404
 
+        source_uid = int(task.get('user_id') or 0)
+        if request.user_id and source_uid not in (0, int(request.user_id)):
+            return jsonify({
+                'success': False, 'message': '无权操作此任务', 'code': 'TASK_FORBIDDEN'
+            }), 403
+
         config = task.get('config', {})
         if isinstance(config, str):
             try:
                 config = json.loads(config)
             except (json.JSONDecodeError, TypeError):
                 config = {}
-        target_url = (config.get('target_url') or task.get('target_url') or '').strip()
-
-        from datetime import datetime
         config = dict(config) if isinstance(config, dict) else {}
-        config['last_run_started_at'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        config['last_run_started_at'] = now_utc_str()
         task_db.update_task(task_id, config=config)
+
+        target_url = (config.get('target_url') or task.get('target_url') or '').strip()
+        if not target_url:
+            return jsonify({
+                'success': False, 'message': '任务缺少目标 URL', 'code': 'MISSING_TARGET_URL'
+            }), 400
 
         crawl_options = _build_crawl_options(config)
         result = crawler_engine.start(
@@ -1172,6 +1194,8 @@ def task_start(task_id):
             start_ok = result
         if not start_ok:
             err_msg = result[1] if isinstance(result, tuple) and len(result) > 1 else '启动爬虫失败'
+            task_db.update_task_status(task_id, 'FAILED')
+            task_db.update_task_stats(task_id, 0, 0, 0, err_msg)
             system_db.add_log(
                 level='ERROR', source='crawler',
                 message=f'任务[{task_id}] 启动失败: {err_msg}',
@@ -1187,11 +1211,15 @@ def task_start(task_id):
         if success:
             system_db.add_log(
                 level='INFO', source='crawler',
-                message=f'任务[{task_id}] 开始执行: 目标={target_url[:100]}, 页数={config.get("total_pages", 1) if isinstance(config, dict) else 1}',
+                message=f'任务[{task_id}] 开始执行: 目标={target_url[:100]}, 页数={config.get("total_pages", 1)}',
                 task_id=task_id
             )
 
-        return jsonify({'success': success, 'message': message}), 200 if success else 400
+        return jsonify({
+            'success': success,
+            'message': message,
+            'data': {'task_id': task_id},
+        }), 200 if success else 400
 
     except Exception as e:
         return jsonify({
@@ -1233,6 +1261,7 @@ def task_executions(task_id):
             }), 404
 
         records = task_db.get_task_executions(task_id)
+        format_rows_datetimes(records, 'created_at')
         return jsonify({'success': True, 'data': records}), 200
 
     except Exception as e:
@@ -1252,6 +1281,7 @@ def task_versions(task_id):
             }), 404
 
         versions = task_db.get_versions(task_id, user_id=request.user_id)
+        format_rows_datetimes(versions, 'created_at')
 
         return jsonify({'success': True, 'data': versions}), 200
 
@@ -1294,6 +1324,8 @@ def task_rollback(task_id):
 def task_favorites():
     try:
         favorites = task_db.get_favorites(user_id=request.user_id)
+        for task in favorites:
+            format_task_for_api(task)
 
         return jsonify({'success': True, 'data': favorites}), 200
 
@@ -1551,10 +1583,10 @@ def task_data_summary(task_id):
                 config = {}
 
         latest_only = request.args.get('latest_only', '1') in ('1', 'true', 'True')
-        since = config.get('last_run_started_at') if latest_only else None
+        since_utc = config.get('last_run_started_at') if latest_only else None
 
-        stats = crawler_db.get_task_data_stats(task_id, since=since)
-        all_stats = crawler_db.get_task_data_stats(task_id, since=None) if since else stats
+        stats = crawler_db.get_task_data_stats(task_id, since=since_utc)
+        all_stats = crawler_db.get_task_data_stats(task_id, since=None) if since_utc else stats
 
         return jsonify({
             'success': True,
@@ -1563,10 +1595,11 @@ def task_data_summary(task_id):
                 'task_name': task.get('name', ''),
                 'total_count': stats['total_count'],
                 'all_time_count': all_stats['total_count'],
-                'today_count': stats['total_count'] if since else stats['total_count'],
+                'today_count': stats['total_count'] if since_utc else stats['total_count'],
                 'type_distribution': stats['type_distribution'],
                 'last_collected_at': stats['last_collected_at'],
-                'last_run_started_at': config.get('last_run_started_at'),
+                'last_run_started_at': format_api_datetime(config.get('last_run_started_at')),
+                'since': since_utc,
                 'latest_only': latest_only,
                 'data_count': task.get('data_count', 0),
                 'execution_time': task.get('execution_time', 0),
@@ -1593,6 +1626,10 @@ def get_data_list():
         sort_field = request.args.get('sort_field', '', type=str)
         sort_order = request.args.get('sort_order', 'desc', type=str)
         since = request.args.get('since', '', type=str).strip() or None
+        if since:
+            parsed_since = parse_to_utc_naive(since)
+            if parsed_since:
+                since = parsed_since.strftime(API_DATETIME_FORMAT)
 
         if page < 1:
             page = 1
@@ -2439,6 +2476,8 @@ def system_setting_update(key):
 def user_preferences_get():
     try:
         preferences = system_db.get_user_preferences(user_id=request.user_id)
+        if preferences:
+            format_row_datetimes(preferences, 'created_at')
 
         return jsonify({'success': True, 'data': preferences}), 200
 
@@ -2511,7 +2550,8 @@ def user_theme_save():
 @auth_service.login_required
 def system_dashboard_stats():
     try:
-        today_stats = crawler_db.get_today_stats()
+        tz_name = get_effective_timezone(get_request_timezone())
+        today_stats = crawler_db.get_today_stats(tz_name=tz_name)
         today_collected = today_stats.get('today_total', 0)
         today_trend = today_stats.get('hourly_breakdown', [0] * 24)
 
@@ -2529,7 +2569,11 @@ def system_dashboard_stats():
                 'running_tasks': running_tasks,
                 'pending_tasks': pending_tasks,
                 'system_status': 'normal',
-                'today_trend': today_trend
+                'today_trend': today_trend,
+                'hour_labels': build_local_hour_labels(tz_name),
+                'stats_time': format_api_datetime(now_utc()),
+                'timezone': tz_name,
+                'timezone_offset': today_stats.get('timezone_offset', '+08:00'),
             }
         }), 200
 

@@ -4,6 +4,7 @@ import os
 from datetime import datetime
 
 from db_settings import DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, DB_NAME, DB_CHARSET, DB_CA_PATH
+from src.datetime_utils import format_row_datetimes
 
 
 class AlertDB:
@@ -146,8 +147,7 @@ class AlertDB:
                 cursor.execute(sql, params)
                 rows = cursor.fetchall()
                 for row in rows:
-                    if row.get("created_at"):
-                        row["created_at"] = row["created_at"].strftime("%Y-%m-%d %H:%M:%S")
+                    format_row_datetimes(row, "created_at")
                 return rows
         except pymysql.Error as e:
             print(f"查询告警规则失败: {e}")
@@ -272,8 +272,7 @@ class AlertDB:
                 rows = cursor.fetchall()
 
                 for row in rows:
-                    if row.get("created_at"):
-                        row["created_at"] = row["created_at"].strftime("%Y-%m-%d %H:%M:%S")
+                    format_row_datetimes(row, "created_at")
 
                 return rows, total
         except pymysql.Error as e:
@@ -348,8 +347,8 @@ class AlertDB:
                     {"rule_id": rule_id}
                 )
                 row = cursor.fetchone()
-                if row and row.get("created_at"):
-                    row["created_at"] = row["created_at"].strftime("%Y-%m-%d %H:%M:%S")
+                if row:
+                    format_row_datetimes(row, "created_at")
                 return row
         except pymysql.Error as e:
             print(f"查询告警规则失败: {e}")

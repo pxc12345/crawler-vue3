@@ -88,10 +88,7 @@ body {
 .card-title {
   font-size: 28px;
   font-weight: 700;
-  background: var(--gradient);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+  color: var(--text-primary);
   text-align: center;
   margin-bottom: 36px;
 }
@@ -104,7 +101,7 @@ body {
   display: block;
   font-size: 14px;
   font-weight: 600;
-  color: var(--gray-700);
+  color: var(--text-primary);
   margin-bottom: 10px;
 }
 
@@ -147,14 +144,14 @@ body {
   background: none;
   border: none;
   cursor: pointer;
-  color: var(--gray-500);
+  color: var(--text-muted);
   font-size: 14px;
   font-weight: 500;
   transition: color 0.2s;
 }
 
 .password-toggle:hover {
-  color: var(--primary-600);
+  color: var(--accent-primary);
 }
 
 .error-message {
@@ -230,7 +227,7 @@ body {
 }
 
 .link {
-  color: var(--primary-600);
+  color: #3b82f6;
   text-decoration: none;
   font-size: 14px;
   cursor: pointer;
@@ -239,7 +236,7 @@ body {
 }
 
 .link:hover {
-  color: var(--primary-800);
+  color: #2563eb;
   text-decoration: underline;
 }
 
@@ -317,7 +314,7 @@ body {
 .profile-item {
   display: flex;
   padding: 18px 0;
-  border-bottom: 1px solid var(--gray-100);
+  border-bottom: 1px solid var(--border-color);
 }
 
 .profile-item:last-child {
@@ -326,14 +323,14 @@ body {
 
 .profile-label {
   width: 120px;
-  color: var(--gray-500);
+  color: var(--text-muted);
   font-size: 14px;
   font-weight: 500;
 }
 
 .profile-value {
   flex: 1;
-  color: var(--gray-800);
+  color: var(--text-primary);
   font-size: 15px;
   font-weight: 500;
 }
@@ -379,7 +376,7 @@ body {
 }
 
 .success-text {
-  color: var(--gray-600);
+  color: var(--text-secondary);
   margin-bottom: 32px;
   font-size: 15px;
 }

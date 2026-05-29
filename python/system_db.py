@@ -4,6 +4,7 @@ import json
 from datetime import datetime
 
 from db_settings import DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, DB_NAME, DB_CHARSET, DB_CA_PATH
+from src.datetime_utils import format_api_datetime, format_row_datetimes, utc_cutoff_days_ago
 
 
 class SystemDB:
@@ -181,8 +182,7 @@ class SystemDB:
                 rows = cursor.fetchall()
 
                 for row in rows:
-                    if row.get("created_at"):
-                        row["created_at"] = row["created_at"].strftime("%Y-%m-%d %H:%M:%S")
+                    format_row_datetimes(row, "created_at")
 
                 return rows, total
         except pymysql.Error as e:
@@ -198,11 +198,10 @@ class SystemDB:
             conn = pymysql.connect(**self._config)
             with conn.cursor() as cursor:
                 if days and days > 0:
-                    from datetime import datetime, timedelta
-                    cutoff = datetime.now() - timedelta(days=days)
+                    cutoff = utc_cutoff_days_ago(days)
                     cursor.execute(
                         "DELETE FROM `system_logs` WHERE `created_at` < %(cutoff)s",
-                        {"cutoff": cutoff.strftime("%Y-%m-%d %H:%M:%S")}
+                        {"cutoff": cutoff}
                     )
                     deleted = cursor.rowcount
                 else:

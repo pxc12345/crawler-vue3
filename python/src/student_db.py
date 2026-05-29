@@ -2,6 +2,7 @@ import pymysql
 from datetime import datetime
 
 from db_settings import PYMYSQL_CONFIG
+from src.datetime_utils import format_api_datetime, now_utc_str
 
 
 class StudentDB:
@@ -25,7 +26,7 @@ class StudentDB:
             self.connection.commit()
 
     def create(self, name, age, grade, avatar_url=None):
-        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        now = now_utc_str()
         with self.connection.cursor() as cursor:
             cursor.execute(
                 "INSERT INTO students (name, age, grade, avatar_url, create_time, update_time) VALUES (%s, %s, %s, %s, %s, %s)",
@@ -44,7 +45,7 @@ class StudentDB:
                 "age": row[2],
                 "grade": row[3],
                 "avatar_url": row[4],
-                "create_time": row[5]
+                "create_time": format_api_datetime(row[5])
             } for row in rows]
 
     def get_by_id(self, student_id):
@@ -58,7 +59,7 @@ class StudentDB:
                     "age": row[2],
                     "grade": row[3],
                     "avatar_url": row[4],
-                    "create_time": row[5]
+                    "create_time": format_api_datetime(row[5])
                 }
             return None
 
@@ -72,11 +73,11 @@ class StudentDB:
                 "age": row[2],
                 "grade": row[3],
                 "avatar_url": row[4],
-                "create_time": row[5]
+                "create_time": format_api_datetime(row[5])
             } for row in rows]
 
     def update(self, student_id, name=None, age=None, grade=None, avatar_url=None):
-        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        now = now_utc_str()
         updates = []
         params = []
 

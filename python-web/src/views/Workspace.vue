@@ -91,6 +91,7 @@ import { ref, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { useRouter } from 'vue-router'
 import { taskAPI } from '../api/task'
+import { buildTaskRunCreatePayload, shouldCloneTaskBeforeStart } from '../utils/taskCopy'
 import { systemAPI } from '../api/system'
 import NavBar from '../components/NavBar.vue'
 
@@ -107,10 +108,37 @@ const recentTasks = ref([])
 
 async function quickStart(fav) {
   try {
-    await taskAPI.startTask(fav.id)
-    ElMessage.success(`任务「${fav.name}」已启动`)
+    const detailRes = await taskAPI.getTask(fav.id)
+    if (!detailRes.data.success) {
+      ElMessage.error(detailRes.data.message || '获取任务详情失败')
+      return
+    }
+    const task = detailRes.data.data
+    if (shouldCloneTaskBeforeStart(task)) {
+      const createRes = await taskAPI.createTask(buildTaskRunCreatePayload(task))
+      if (!createRes.data.success) {
+        ElMessage.error(createRes.data.message || '创建新任务失败')
+        return
+      }
+      const newTaskId = createRes.data.data?.task_id
+      const startRes = await taskAPI.startTask(newTaskId)
+      if (startRes.data.success) {
+        ElMessage.success(`已复制并启动新任务 #${newTaskId}`)
+        router.push(`/tasks/${newTaskId}`)
+      } else {
+        ElMessage.error(startRes.data.message || '启动失败')
+      }
+    } else {
+      const startRes = await taskAPI.startTask(fav.id)
+      if (startRes.data.success) {
+        ElMessage.success('任务已启动')
+        router.push(`/tasks/${fav.id}`)
+      } else {
+        ElMessage.error(startRes.data.message || '启动失败')
+      }
+    }
   } catch (error) {
-    ElMessage.error('启动任务失败')
+    ElMessage.error(error.response?.data?.message || error.message || '启动任务失败')
   }
 }
 

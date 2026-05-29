@@ -385,15 +385,15 @@ onMounted(() => {
   transition: all 0.2s ease;
 }
 
-.type-btn:hover { color: rgba(255, 255, 255, 0.75); }
-.type-btn.active { color: var(--accent-color); background: rgba(var(--accent-rgb), 0.15); font-weight: 600; }
+.type-btn:hover { color: var(--text-primary); }
+.type-btn.active { color: var(--accent-primary); background: rgba(var(--accent-rgb), 0.15); font-weight: 600; }
 
 .read-toggle {
   display: flex;
   align-items: center;
   gap: 8px;
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.4);
+  color: var(--text-muted);
   cursor: pointer;
 }
 
@@ -408,7 +408,7 @@ onMounted(() => {
 }
 .skeleton-line {
   height: 14px;
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--border-color);
   border-radius: 7px;
   margin-bottom: 10px;
   animation: shimmer 1.5s ease-in-out infinite;
@@ -424,13 +424,13 @@ onMounted(() => {
 .empty-state { text-align: center; padding: 80px 20px; }
 .empty-icon {
   width: 80px; height: 80px; margin: 0 auto 24px;
-  border-radius: 20px; background: rgba(255, 255, 255, 0.03);
+  border-radius: 20px; background: var(--border-color);
   display: flex; align-items: center; justify-content: center;
-  color: rgba(255, 255, 255, 0.1);
+  color: var(--text-muted);
 }
 .empty-icon svg { width: 36px; height: 36px; }
 .empty-text { font-size: 18px; font-weight: 600; color: var(--text-muted); margin-bottom: 8px; }
-.empty-desc { font-size: 13px; color: rgba(255, 255, 255, 0.2); }
+.empty-desc { font-size: 13px; color: var(--text-muted); }
 
 .alert-list { display: flex; flex-direction: column; gap: 10px; }
 
@@ -485,16 +485,16 @@ onMounted(() => {
 
 .alert-message {
   font-size: 14px; font-weight: 600;
-  color: rgba(255, 255, 255, 0.85);
+  color: var(--text-primary);
   margin-bottom: 6px; line-height: 1.4;
 }
 
 .alert-meta {
   display: flex; gap: 14px;
-  font-size: 12px; color: rgba(255, 255, 255, 0.3);
+  font-size: 12px; color: var(--text-muted);
 }
 
-.alert-task { font-weight: 500; color: rgba(255, 255, 255, 0.4); }
+.alert-task { font-weight: 500; color: var(--text-muted); }
 
 .alert-right {
   display: flex; align-items: center; gap: 10px;
@@ -503,13 +503,13 @@ onMounted(() => {
 
 .unread-dot {
   width: 8px; height: 8px; border-radius: 50%;
-  background: #f87171;
+  background: var(--error-text, #f87171);
   box-shadow: 0 0 6px rgba(248, 113, 113, 0.5);
 }
 
 .expand-icon {
   width: 18px; height: 18px;
-  color: rgba(255, 255, 255, 0.2);
+  color: var(--text-muted);
   transition: transform 0.25s ease;
 }
 
@@ -530,13 +530,13 @@ onMounted(() => {
 
 .detail-label {
   font-size: 11px; font-weight: 600;
-  color: rgba(255, 255, 255, 0.35);
+  color: var(--text-muted);
   text-transform: uppercase; letter-spacing: 0.5px;
   margin-bottom: 6px;
 }
 
 .detail-text {
-  font-size: 13px; color: rgba(255, 255, 255, 0.5);
+  font-size: 13px; color: var(--text-secondary);
   line-height: 1.6;
 }
 
@@ -546,12 +546,12 @@ onMounted(() => {
 
 .detail-btn {
   padding: 7px 16px; font-size: 12px; font-weight: 500;
-  border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 8px;
+  border: 1px solid var(--border-color); border-radius: 8px;
   cursor: pointer; transition: all 0.2s ease;
-  background: rgba(255, 255, 255, 0.04); color: rgba(255, 255, 255, 0.5);
+  background: var(--border-color); color: var(--text-secondary);
 }
 
-.detail-btn:hover { background: rgba(255, 255, 255, 0.08); color: rgba(255, 255, 255, 0.75); }
+.detail-btn:hover { background: var(--card-hover-bg); color: var(--text-primary); }
 
 .detail-btn.primary {
   background: rgba(var(--accent-rgb), 0.15);
@@ -566,15 +566,15 @@ onMounted(() => {
 
 .page-btn {
   width: 38px; height: 38px; display: flex; align-items: center; justify-content: center;
-  background: var(--bg-card); border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 10px; color: rgba(255, 255, 255, 0.5);
+  background: var(--bg-card); border: 1px solid var(--border-color);
+  border-radius: 10px; color: var(--text-secondary);
   cursor: pointer; transition: all 0.25s ease;
 }
 
-.page-btn:hover:not(:disabled) { color: rgba(255, 255, 255, 0.85); border-color: rgba(255, 255, 255, 0.15); }
+.page-btn:hover:not(:disabled) { color: var(--text-primary); border-color: rgba(var(--accent-rgb), 0.2); }
 .page-btn:disabled { opacity: 0.3; cursor: not-allowed; }
 .page-btn svg { width: 18px; height: 18px; }
-.page-info { font-size: 13px; font-weight: 600; color: rgba(255, 255, 255, 0.4); }
+.page-info { font-size: 13px; font-weight: 600; color: var(--text-muted); }
 
 @media (max-width: 768px) {
   .alerts-content { padding: 24px 16px 64px; }

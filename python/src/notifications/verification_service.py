@@ -1,7 +1,8 @@
 import random
 import string
-from datetime import datetime, timedelta
+from datetime import timedelta
 from src.notification_db import notification_db
+from src.datetime_utils import now_utc, now_utc_str
 
 
 class VerificationService:
@@ -33,7 +34,7 @@ class VerificationService:
         user_id = user['id'] if user else self._create_temp_user(email=email)
 
         code = self._generate_code()
-        expires_at = (datetime.now() + timedelta(minutes=self.CODE_EXPIRE_MINUTES)).strftime("%Y-%m-%d %H:%M:%S")
+        expires_at = (now_utc() + timedelta(minutes=self.CODE_EXPIRE_MINUTES)).strftime("%Y-%m-%d %H:%M:%S")
 
         self.db.save_verification_code(user_id, code, 'email', email, expires_at)
 
@@ -62,7 +63,7 @@ class VerificationService:
         user_id = user['id'] if user else self._create_temp_user(phone=phone)
 
         code = self._generate_code()
-        expires_at = (datetime.now() + timedelta(minutes=self.CODE_EXPIRE_MINUTES)).strftime("%Y-%m-%d %H:%M:%S")
+        expires_at = (now_utc() + timedelta(minutes=self.CODE_EXPIRE_MINUTES)).strftime("%Y-%m-%d %H:%M:%S")
 
         self.db.save_verification_code(user_id, code, 'sms', phone, expires_at)
 

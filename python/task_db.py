@@ -4,6 +4,7 @@ import json
 from datetime import datetime
 
 from db_settings import DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, DB_NAME, DB_CHARSET, DB_CA_PATH
+from src.datetime_utils import now_utc_str
 
 
 class TaskDB:
@@ -205,10 +206,6 @@ class TaskDB:
                 rows = cursor.fetchall()
 
                 for row in rows:
-                    if row.get("created_at"):
-                        row["created_at"] = row["created_at"].strftime("%Y-%m-%d %H:%M:%S")
-                    if row.get("updated_at"):
-                        row["updated_at"] = row["updated_at"].strftime("%Y-%m-%d %H:%M:%S")
                     self._normalize_task_row(row)
 
                 return rows, total
@@ -319,10 +316,6 @@ class TaskDB:
                 )
                 row = cursor.fetchone()
                 if row:
-                    if row.get("created_at"):
-                        row["created_at"] = row["created_at"].strftime("%Y-%m-%d %H:%M:%S")
-                    if row.get("updated_at"):
-                        row["updated_at"] = row["updated_at"].strftime("%Y-%m-%d %H:%M:%S")
                     self._normalize_task_row(row)
                 return row
         except pymysql.Error as e:
@@ -368,10 +361,6 @@ class TaskDB:
                 )
                 rows = cursor.fetchall()
                 for row in rows:
-                    if row.get("created_at"):
-                        row["created_at"] = row["created_at"].strftime("%Y-%m-%d %H:%M:%S")
-                    if row.get("updated_at"):
-                        row["updated_at"] = row["updated_at"].strftime("%Y-%m-%d %H:%M:%S")
                     self._normalize_template_row(row)
                 return rows
         except pymysql.Error as e:
@@ -486,10 +475,6 @@ class TaskDB:
                     )
                 row = cursor.fetchone()
                 if row:
-                    if row.get("created_at"):
-                        row["created_at"] = row["created_at"].strftime("%Y-%m-%d %H:%M:%S")
-                    if row.get("updated_at"):
-                        row["updated_at"] = row["updated_at"].strftime("%Y-%m-%d %H:%M:%S")
                     self._normalize_template_row(row)
                 return row
         except pymysql.Error as e:
@@ -562,8 +547,6 @@ class TaskDB:
 
     def _normalize_version_rows(self, rows):
         for row in rows:
-            if row.get("created_at"):
-                row["created_at"] = row["created_at"].strftime("%Y-%m-%d %H:%M:%S")
             cfg = row.get("config")
             if isinstance(cfg, str) and cfg.strip():
                 try:
@@ -700,11 +683,6 @@ class TaskDB:
                 """
                 cursor.execute(sql, {"user_id": user_id})
                 rows = cursor.fetchall()
-                for row in rows:
-                    if row.get("created_at"):
-                        row["created_at"] = row["created_at"].strftime("%Y-%m-%d %H:%M:%S")
-                    if row.get("updated_at"):
-                        row["updated_at"] = row["updated_at"].strftime("%Y-%m-%d %H:%M:%S")
                 return rows
         except pymysql.Error as e:
             print(f"查询收藏任务失败: {e}")
@@ -790,7 +768,7 @@ class TaskDB:
                 conditions = []
                 params = {"user_id": user_id}
 
-                conditions.append("t.`user_id` = %(user_id)s")
+                conditions.append("(t.`user_id` = %(user_id)s OR t.`user_id` = 0)")
 
                 if keyword:
                     conditions.append("(`name` LIKE %(keyword)s OR `target_url` LIKE %(keyword)s)")
@@ -824,10 +802,6 @@ class TaskDB:
                 rows = cursor.fetchall()
 
                 for row in rows:
-                    if row.get("created_at"):
-                        row["created_at"] = row["created_at"].strftime("%Y-%m-%d %H:%M:%S")
-                    if row.get("updated_at"):
-                        row["updated_at"] = row["updated_at"].strftime("%Y-%m-%d %H:%M:%S")
                     self._normalize_task_row(row)
 
                 return rows, total
@@ -843,6 +817,72 @@ class TaskDB:
             user_id=user_id, status=status, keyword=keyword,
             page=page, page_size=page_size
         )
+
+    def clone_task_for_run(self, task_id, user_id=0, run_label=None):
+        """基于已有任务克隆一条新的运行记录（每次点击运行创建新任务）。"""
+        conn = None
+        try:
+            conn = pymysql.connect(**self._config)
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    "SELECT * FROM `crawler_tasks` WHERE `id` = %(task_id)s",
+                    {"task_id": task_id},
+                )
+                source = cursor.fetchone()
+            if not source:
+                return None, "任务不存在"
+
+            source_uid = int(source.get("user_id") or 0)
+            req_uid = int(user_id or 0)
+            if req_uid and source_uid not in (0, req_uid):
+                return None, "无权操作此任务"
+
+            config = source.get("config")
+            if isinstance(config, str) and config.strip():
+                try:
+                    config = json.loads(config)
+                except (json.JSONDecodeError, TypeError):
+                    config = {}
+            elif not isinstance(config, dict):
+                config = {}
+            config = dict(config)
+            config.pop("_last_execution", None)
+            config["last_run_started_at"] = now_utc_str()
+            config["source_task_id"] = int(task_id)
+
+            base_name = (source.get("name") or "任务").strip()
+            if " · " in base_name:
+                base_name = base_name.rsplit(" · ", 1)[0]
+            label = run_label or now_utc_str()
+            new_name = "{} · {}".format(base_name, label)
+
+            alert_rules = source.get("alert_rules")
+            if isinstance(alert_rules, str) and alert_rules.strip():
+                try:
+                    alert_rules = json.loads(alert_rules)
+                except (json.JSONDecodeError, TypeError):
+                    alert_rules = None
+
+            owner_id = req_uid if req_uid else source_uid
+            return self.create_task(
+                name=new_name,
+                target_url=source.get("target_url", ""),
+                status="PENDING",
+                cron_expr=source.get("cron_expr", ""),
+                concurrency=source.get("concurrency", 1) or 1,
+                interval_seconds=source.get("interval_seconds", 0) or 0,
+                retry_count=source.get("retry_count", 0) or 0,
+                retry_interval=source.get("retry_interval", 60) or 60,
+                proxy_group=source.get("proxy_group", ""),
+                alert_rules=alert_rules,
+                config=config,
+                user_id=owner_id,
+            )
+        except pymysql.Error as e:
+            return None, str(e)
+        finally:
+            if conn:
+                conn.close()
 
     def get_by_id(self, task_id, user_id=0):
         return self.get_task_by_id(task_id)

@@ -99,6 +99,15 @@
           </div>
 
           <div class="task-card-meta">
+            <div v-if="task.createdAt" class="task-meta-item">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+                <line x1="16" y1="2" x2="16" y2="6"/>
+                <line x1="8" y1="2" x2="8" y2="6"/>
+                <line x1="3" y1="10" x2="21" y2="10"/>
+              </svg>
+              <span>{{ task.createdAt }}</span>
+            </div>
             <div class="task-meta-item">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
                 <circle cx="12" cy="12" r="10"/>
@@ -136,18 +145,36 @@
 
           <div class="task-card-actions" @click.stop>
             <button
-              class="task-btn"
-              :class="task.status === 'running' ? 'btn-stop' : 'btn-start'"
-              @click="toggleTaskStatus(task)"
+              v-if="task.status === 'running'"
+              class="task-btn btn-stop"
+              @click="stopTask(task)"
             >
-              <svg v-if="task.status === 'running'" viewBox="0 0 24 24" fill="currentColor" stroke="none">
+              <svg viewBox="0 0 24 24" fill="currentColor" stroke="none">
                 <rect x="6" y="4" width="4" height="16"/>
                 <rect x="14" y="4" width="4" height="16"/>
               </svg>
-              <svg v-else viewBox="0 0 24 24" fill="currentColor" stroke="none">
+              停止
+            </button>
+            <button
+              v-else
+              class="task-btn btn-start"
+              @click="startTask(task)"
+            >
+              <svg viewBox="0 0 24 24" fill="currentColor" stroke="none">
                 <polygon points="5 3 19 12 5 21 5 3"/>
               </svg>
-              {{ task.status === 'running' ? '停止' : '启动' }}
+              启动
+            </button>
+            <button
+              v-if="canRestartTask(task)"
+              class="task-btn btn-restart"
+              @click="restartTask(task)"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="23 4 23 10 17 10"/>
+                <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+              </svg>
+              重新启动
             </button>
             <button class="task-btn btn-edit" @click="openTaskEdit(task)">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -191,6 +218,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import NavBar from '../components/NavBar.vue'
 import { taskAPI } from '../api/task'
 import { crawlerAPI } from '../api/crawler'
+import { buildTaskRunCreatePayload, shouldCloneTaskBeforeStart } from '../utils/taskCopy'
 
 const router = useRouter()
 const loading = ref(true)
@@ -291,31 +319,90 @@ async function syncTaskFromServer(taskId) {
   }
 }
 
-async function toggleTaskStatus(task) {
+async function copyAndStartTask(task) {
+  const detailRes = await taskAPI.getTask(task.id)
+  if (!detailRes.data.success) {
+    throw new Error(detailRes.data.message || '获取任务详情失败')
+  }
+  const source = detailRes.data.data
+  const createPayload = buildTaskRunCreatePayload(source)
+  const createRes = await taskAPI.createTask(createPayload)
+  if (!createRes.data.success) {
+    throw new Error(createRes.data.message || '创建新任务失败')
+  }
+  const newTaskId = createRes.data.data?.task_id
+  if (!newTaskId) {
+    throw new Error('未返回新任务 ID')
+  }
+  const startRes = await taskAPI.startTask(newTaskId)
+  if (!startRes.data.success) {
+    throw new Error(startRes.data.message || '启动新任务失败')
+  }
+  return newTaskId
+}
+
+async function directStartTask(task, successMessage = '任务已启动') {
+  const startRes = await taskAPI.startTask(task.id)
+  if (!startRes.data.success) {
+    throw new Error(startRes.data.message || '启动失败')
+  }
+  applyRunningState(task)
+  await syncTaskFromServer(task.id)
+  ElMessage.success(successMessage)
+  return task.id
+}
+
+async function runTaskStartFlow(task) {
+  const needClone = shouldCloneTaskBeforeStart(task)
+  if (needClone) {
+    const newTaskId = await copyAndStartTask(task)
+    currentPage.value = 1
+    await fetchTasks()
+    const newTask = tasks.value.find(t => String(t.id) === String(newTaskId))
+    if (newTask) {
+      applyRunningState(newTask)
+    }
+    ElMessage.success(`已复制并启动新任务 #${newTaskId}`)
+    return newTaskId
+  }
+  return directStartTask(task)
+}
+
+function canRestartTask(task) {
+  return task.status !== 'running' && shouldCloneTaskBeforeStart(task)
+}
+
+async function stopTask(task) {
   try {
-    let res
-    if (task.status === 'running') {
-      res = await taskAPI.stopTask(task.id)
-      if (res.data.success) {
-        delete taskStartTimes.value[task.id]
-        await syncTaskFromServer(task.id)
-        ElMessage.success('任务已停止')
-      } else {
-        ElMessage.error(res.data.message)
-      }
+    const res = await taskAPI.stopTask(task.id)
+    if (res.data.success) {
+      delete taskStartTimes.value[task.id]
+      await syncTaskFromServer(task.id)
+      ElMessage.success('任务已停止')
     } else {
-      res = await taskAPI.startTask(task.id)
-      if (res.data.success) {
-        applyRunningState(task)
-        ElMessage.success('任务已启动')
-        await syncTaskFromServer(task.id)
-      } else {
-        ElMessage.error(res.data.message)
-        await syncTaskFromServer(task.id)
-      }
+      ElMessage.error(res.data.message)
     }
   } catch (e) {
-    ElMessage.error('操作失败')
+    const msg = e.response?.data?.message || e.message || '操作失败'
+    ElMessage.error(msg)
+  }
+}
+
+async function startTask(task) {
+  try {
+    await runTaskStartFlow(task)
+  } catch (e) {
+    const msg = e.response?.data?.message || e.message || '操作失败'
+    ElMessage.error(msg)
+  }
+}
+
+async function restartTask(task) {
+  try {
+    await directStartTask(task, '任务已重新启动')
+  } catch (e) {
+    const msg = e.response?.data?.message || e.message || '操作失败'
+    ElMessage.error(msg)
   }
 }
 
@@ -402,7 +489,10 @@ function mapTaskFromApi(item) {
     id: item.id,
     name: item.name,
     url: item.target_url || item.url || '',
+    createdAt: item.created_at || '',
     status: taskStatus,
+    config,
+    data_count: item.data_count || liveStatus.collected_count || 0,
     _executionTime: elapsed,
     _startTime: taskStartTimes.value[item.id],
     _dataCount: item.data_count || liveStatus.collected_count || 0,
@@ -681,7 +771,7 @@ onUnmounted(() => {
   transform: translateY(-50%);
   width: 16px;
   height: 16px;
-  color: rgba(255, 255, 255, 0.25);
+  color: var(--text-muted);
   pointer-events: none;
 }
 
@@ -771,11 +861,11 @@ onUnmounted(() => {
   height: 80px;
   margin: 0 auto 24px;
   border-radius: 20px;
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--border-color);
   display: flex;
   align-items: center;
   justify-content: center;
-  color: rgba(255, 255, 255, 0.1);
+  color: var(--text-muted);
 }
 
 .empty-icon svg {
@@ -836,7 +926,7 @@ onUnmounted(() => {
 
 .task-favorite {
   padding-top: 2px;
-  color: rgba(255, 255, 255, 0.2);
+  color: var(--text-muted);
   cursor: pointer;
   transition: all 0.25s ease;
   flex-shrink: 0;
@@ -936,20 +1026,12 @@ onUnmounted(() => {
 }
 
 .status-failed {
-  background: rgba(231, 76, 60, 0.15);
-  color: #e74c3c;
-  border: 1px solid rgba(231, 76, 60, 0.3);
-}
-.status-failed .status-dot {
-  background: #e74c3c;
-}
-
-.status-failed {
   background: rgba(239, 68, 68, 0.12);
-  color: #f87171;
+  color: var(--error-text, #f87171);
+  border: 1px solid rgba(239, 68, 68, 0.3);
 }
 .status-failed .status-dot {
-  background: #f87171;
+  background: var(--error-text, #f87171);
 }
 
 @keyframes pulse {
@@ -968,13 +1050,13 @@ onUnmounted(() => {
   align-items: center;
   gap: 6px;
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.35);
+  color: var(--text-secondary);
 }
 
 .task-meta-item svg {
   width: 14px;
   height: 14px;
-  color: rgba(255, 255, 255, 0.2);
+  color: var(--text-muted);
 }
 
 .task-card-progress {
@@ -990,7 +1072,7 @@ onUnmounted(() => {
 
 .progress-label {
   font-size: 11px;
-  color: rgba(255, 255, 255, 0.3);
+  color: var(--text-muted);
 }
 
 .progress-value {
@@ -1004,7 +1086,7 @@ onUnmounted(() => {
 
 .progress-bar {
   height: 5px;
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--border-color);
   border-radius: 3px;
   overflow: hidden;
 }
@@ -1029,7 +1111,7 @@ onUnmounted(() => {
   border: 1px solid rgba(239, 68, 68, 0.35);
   border-radius: 8px;
   font-size: 11px;
-  color: #fca5a5;
+  color: var(--error-text, #fca5a5);
   line-height: 1.45;
 }
 
@@ -1047,6 +1129,7 @@ onUnmounted(() => {
 
 .task-card-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   padding-top: 14px;
   border-top: 1px solid var(--border-color);
@@ -1081,6 +1164,12 @@ onUnmounted(() => {
   color: #34d399;
   border-color: rgba(16, 185, 129, 0.3);
   background: rgba(16, 185, 129, 0.1);
+}
+
+.task-btn.btn-restart:hover {
+  color: #60a5fa;
+  border-color: rgba(59, 130, 246, 0.3);
+  background: rgba(59, 130, 246, 0.1);
 }
 
 .task-btn.btn-stop:hover {

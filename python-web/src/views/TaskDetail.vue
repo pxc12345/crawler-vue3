@@ -671,8 +671,8 @@ async function fetchPreviewTable() {
       sort_field: 'collected_at',
       sort_order: 'desc',
     }
-    if (dataSummary.value?.last_run_started_at) {
-      params.since = dataSummary.value.last_run_started_at
+    if (dataSummary.value?.since) {
+      params.since = dataSummary.value.since
     }
     const res = await dataAPI.getDataList(params)
     if (res.data.success) {
@@ -800,7 +800,7 @@ watch(activeTab, (val) => {
 
 .btn-back:hover {
   color: var(--text-primary);
-  border-color: rgba(255, 255, 255, 0.15);
+  border-color: var(--border-color);
 }
 
 .btn-back svg {
@@ -882,8 +882,8 @@ watch(activeTab, (val) => {
 
 .btn-version:hover {
   color: var(--text-primary);
-  background: rgba(255, 255, 255, 0.06);
-  border-color: rgba(255, 255, 255, 0.15);
+  background: var(--card-hover-bg);
+  border-color: var(--border-color);
 }
 
 .btn-version svg {
@@ -898,7 +898,7 @@ watch(activeTab, (val) => {
   border-radius: 12px;
   padding: 5px;
   margin-bottom: 24px;
-  border: 1px solid rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border-color);
 }
 
 .tab-btn {
@@ -915,7 +915,8 @@ watch(activeTab, (val) => {
 }
 
 .tab-btn:hover {
-  color: rgba(255, 255, 255, 0.7);
+  color: var(--active-color);
+  background: var(--active-bg);
 }
 
 .tab-btn.active {
@@ -963,7 +964,7 @@ watch(activeTab, (val) => {
   width: 100%;
   padding: 11px 16px;
   font-size: 14px;
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--card-hover-bg);
   border: 1px solid var(--border-color);
   border-radius: 10px;
   color: var(--text-primary);
@@ -996,7 +997,7 @@ select.form-input option {
   padding: 11px 16px;
   font-size: 13px;
   font-family: 'SF Mono', 'Fira Code', monospace;
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--card-hover-bg);
   border: 1px solid var(--border-color);
   border-radius: 10px;
   color: var(--text-primary);
@@ -1059,7 +1060,7 @@ select.form-input option {
   color: var(--text-secondary);
 }
 
-.action-btn.cancel:hover { background: rgba(255, 255, 255, 0.08); color: var(--text-primary); }
+.action-btn.cancel:hover { background: var(--card-hover-bg); color: var(--text-primary); }
 
 .log-controls {
   display: flex;
@@ -1067,7 +1068,7 @@ select.form-input option {
   align-items: center;
   padding-bottom: 14px;
   margin-bottom: 14px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  border-bottom: 1px solid var(--border-color);
 }
 
 .auto-scroll-label {
@@ -1075,7 +1076,7 @@ select.form-input option {
   align-items: center;
   gap: 8px;
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.4);
+  color: var(--text-muted);
   cursor: pointer;
 }
 
@@ -1090,7 +1091,7 @@ select.form-input option {
   background: rgba(239, 68, 68, 0.08);
   border: 1px solid rgba(239, 68, 68, 0.15);
   border-radius: 8px;
-  color: #f87171;
+  color: var(--error-text, #f87171);
   cursor: pointer;
   transition: all 0.2s ease;
 }
@@ -1105,14 +1106,14 @@ select.form-input option {
   font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
   font-size: 12px;
   line-height: 1.8;
-  background: rgba(0, 0, 0, 0.2);
+  background: var(--border-color);
   border-radius: 10px;
   padding: 16px;
 }
 
 .log-viewer::-webkit-scrollbar { width: 6px; }
 .log-viewer::-webkit-scrollbar-track { background: transparent; }
-.log-viewer::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.08); border-radius: 3px; }
+.log-viewer::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 3px; }
 
 .log-line {
   display: flex;
@@ -1131,20 +1132,20 @@ select.form-input option {
 }
 
 .log-level.info { color: var(--active-color); }
-.log-level.warn { color: #fbbf24; }
-.log-level.error { color: #f87171; }
+.log-level.warn { color: var(--warning-text, #fbbf24); }
+.log-level.error { color: var(--error-text, #f87171); }
 
 .log-msg { color: var(--text-secondary); }
 
 .log-msg :deep(.kw) { color: var(--active-color); }
-.log-msg :deep(.err) { color: #f87171; }
+.log-msg :deep(.err) { color: var(--error-text, #f87171); }
 
-.log-line.error .log-msg { color: #f87171; }
-.log-line.warn .log-msg { color: #fbbf24; }
+.log-line.error .log-msg { color: var(--error-text, #f87171); }
+.log-line.warn .log-msg { color: var(--warning-text, #fbbf24); }
 
 .log-empty {
   text-align: center;
-  color: rgba(255, 255, 255, 0.15);
+  color: var(--text-muted);
   padding: 60px 0;
   font-size: 13px;
 }
@@ -1161,7 +1162,7 @@ select.form-input option {
   top: 0;
   bottom: 0;
   width: 2px;
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--border-color);
 }
 
 .timeline-item {
@@ -1178,8 +1179,8 @@ select.form-input option {
   width: 12px;
   height: 12px;
   border-radius: 50%;
-  border: 2px solid rgba(255, 255, 255, 0.1);
-  background: #0d1117;
+  border: 2px solid var(--border-color);
+  background: var(--bg-primary);
 }
 
 .timeline-dot.dot-completed {
@@ -1189,13 +1190,13 @@ select.form-input option {
 }
 
 .timeline-dot.dot-failed {
-  border-color: #f87171;
-  background: #f87171;
+  border-color: var(--error-text, #f87171);
+  background: var(--error-text, #f87171);
   box-shadow: 0 0 8px rgba(248, 113, 113, 0.4);
 }
 
 .timeline-card {
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--card-hover-bg);
   border: 1px solid var(--border-color);
   border-radius: 12px;
   padding: 16px 20px;
@@ -1211,7 +1212,7 @@ select.form-input option {
 .record-version {
   font-size: 13px;
   font-weight: 700;
-  color: rgba(255, 255, 255, 0.7);
+  color: var(--text-primary);
 }
 
 .record-status {
@@ -1222,19 +1223,19 @@ select.form-input option {
 }
 
 .record-status.status-completed { background: rgba(16, 185, 129, 0.12); color: #34d399; }
-.record-status.status-failed { background: rgba(239, 68, 68, 0.12); color: #f87171; }
+.record-status.status-failed { background: rgba(239, 68, 68, 0.12); color: var(--error-text, #f87171); }
 
 .timeline-card-meta {
   display: flex;
   gap: 20px;
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.3);
+  color: var(--text-muted);
   margin-bottom: 6px;
 }
 
 .timeline-card-time {
   font-size: 11px;
-  color: rgba(255, 255, 255, 0.2);
+  color: var(--text-muted);
 }
 
 .timeline-card-summary {
@@ -1325,9 +1326,9 @@ select.form-input option {
 }
 
 .side-status.status-running { background: rgba(16, 185, 129, 0.12); color: #34d399; }
-.side-status.status-pending { background: rgba(var(--accent-rgb), 0.12); color: var(--accent-color); }
-.side-status.status-completed { background: rgba(255, 255, 255, 0.06); color: var(--text-secondary); }
-.side-status.status-failed { background: rgba(239, 68, 68, 0.12); color: #f87171; }
+.side-status.status-pending { background: rgba(var(--accent-rgb), 0.12); color: var(--accent-primary); }
+.side-status.status-completed { background: var(--card-hover-bg); color: var(--text-secondary); }
+.side-status.status-failed { background: rgba(239, 68, 68, 0.12); color: var(--error-text, #f87171); }
 
 .side-metrics {
   display: flex;
@@ -1381,8 +1382,8 @@ select.form-input option {
   padding: 8px;
   font-size: 11px;
   line-height: 1.4;
-  color: #fca5a5;
-  background: rgba(239, 68, 68, 0.1);
+  color: var(--error-text, #fca5a5);
+  background: var(--error-bg, rgba(239, 68, 68, 0.1));
   border: 1px solid rgba(239, 68, 68, 0.25);
   border-radius: 8px;
   word-break: break-word;
@@ -1394,7 +1395,7 @@ select.form-input option {
   font-size: 12px;
   font-weight: 600;
   color: var(--text-secondary);
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--border-color);
   border: 1px solid var(--border-color);
   border-radius: 10px;
   cursor: pointer;
@@ -1471,12 +1472,12 @@ select.form-input option {
 .task-preview-table.data-el-table {
   --el-table-bg-color: transparent;
   --el-table-tr-bg-color: transparent;
-  --el-table-header-bg-color: rgba(0, 0, 0, 0.25);
+  --el-table-header-bg-color: var(--border-color);
   --el-table-row-hover-bg-color: rgba(var(--accent-rgb), 0.08);
   --el-table-border-color: var(--border-color);
   --el-table-text-color: var(--text-secondary);
   --el-table-header-text-color: var(--text-muted);
-  --el-fill-color-lighter: rgba(255, 255, 255, 0.03);
+  --el-fill-color-lighter: var(--border-color);
   --el-bg-color: transparent;
 }
 
@@ -1487,13 +1488,13 @@ select.form-input option {
 }
 
 .task-preview-table.data-el-table :deep(.el-table__header th.el-table__cell) {
-  background-color: rgba(0, 0, 0, 0.25) !important;
+  background-color: var(--border-color) !important;
   color: var(--text-muted) !important;
   border-color: var(--border-color) !important;
 }
 
 .task-preview-table.data-el-table :deep(.el-table__body tr) {
-  background-color: rgba(255, 255, 255, 0.02) !important;
+  background-color: transparent !important;
 }
 
 .task-preview-table.data-el-table :deep(.el-table__body td.el-table__cell) {
@@ -1538,7 +1539,7 @@ select.form-input option {
 }
 
 .data-link {
-  color: var(--accent-color);
+  color: var(--accent-primary);
   text-decoration: none;
 }
 
@@ -1577,7 +1578,7 @@ select.form-input option {
 
 .tag-link { background: rgba(var(--accent-rgb), 0.15); color: var(--active-color); }
 .tag-image { background: rgba(16, 185, 129, 0.15); color: #34d399; }
-.tag-page { background: rgba(255, 255, 255, 0.08); color: var(--text-muted); }
+.tag-page { background: var(--card-hover-bg); color: var(--text-muted); }
 
 .loading-state {
   display: flex;
@@ -1586,14 +1587,14 @@ select.form-input option {
   justify-content: center;
   gap: 16px;
   padding: 60px;
-  color: rgba(255, 255, 255, 0.4);
+  color: var(--text-muted);
 }
 
 .spinner {
   width: 32px;
   height: 32px;
-  border: 3px solid rgba(255, 255, 255, 0.1);
-  border-top-color: #4c6ef5;
+  border: 3px solid var(--border-color);
+  border-top-color: var(--accent-primary);
   border-radius: 50%;
   animation: spin 1s linear infinite;
 }
@@ -1614,11 +1615,11 @@ select.form-input option {
   width: 72px;
   height: 72px;
   border-radius: 18px;
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--border-color);
   display: flex;
   align-items: center;
   justify-content: center;
-  color: rgba(255, 255, 255, 0.15);
+  color: var(--text-muted);
 }
 
 .empty-icon svg { width: 32px; height: 32px; }
@@ -1626,12 +1627,12 @@ select.form-input option {
 .empty-text {
   font-size: 16px;
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.35);
+  color: var(--text-secondary);
 }
 
 .empty-desc {
   font-size: 13px;
-  color: rgba(255, 255, 255, 0.2);
+  color: var(--text-muted);
 }
 
 @media (max-width: 960px) {

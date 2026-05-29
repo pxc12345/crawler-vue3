@@ -3,6 +3,7 @@ import os
 from datetime import datetime
 
 from db_settings import DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, DB_NAME, DB_CHARSET, DB_CA_PATH
+from src.datetime_utils import format_row_datetimes
 
 
 class ProxyDB:
@@ -158,10 +159,7 @@ class ProxyDB:
                 cursor.execute(sql, params)
                 rows = cursor.fetchall()
                 for row in rows:
-                    if row.get("last_check_at"):
-                        row["last_check_at"] = row["last_check_at"].strftime("%Y-%m-%d %H:%M:%S")
-                    if row.get("created_at"):
-                        row["created_at"] = row["created_at"].strftime("%Y-%m-%d %H:%M:%S")
+                    format_row_datetimes(row, "last_check_at", "created_at")
                 return rows
         except pymysql.Error as e:
             print(f"查询代理失败: {e}")
@@ -271,10 +269,7 @@ class ProxyDB:
                 )
                 rows = cursor.fetchall()
                 for row in rows:
-                    if row.get("last_check_at"):
-                        row["last_check_at"] = row["last_check_at"].strftime("%Y-%m-%d %H:%M:%S")
-                    if row.get("created_at"):
-                        row["created_at"] = row["created_at"].strftime("%Y-%m-%d %H:%M:%S")
+                    format_row_datetimes(row, "last_check_at", "created_at")
                 return rows
         except pymysql.Error as e:
             print(f"按分组查询代理失败: {e}")
@@ -293,8 +288,7 @@ class ProxyDB:
                 )
                 rows = cursor.fetchall()
                 for row in rows:
-                    if row.get("created_at"):
-                        row["created_at"] = row["created_at"].strftime("%Y-%m-%d %H:%M:%S")
+                    format_row_datetimes(row, "created_at")
                 return rows
         except pymysql.Error as e:
             print(f"查询代理分组失败: {e}")
@@ -362,8 +356,7 @@ class ProxyDB:
                 )
                 rows = cursor.fetchall()
                 for row in rows:
-                    if row.get("created_at"):
-                        row["created_at"] = row["created_at"].strftime("%Y-%m-%d %H:%M:%S")
+                    format_row_datetimes(row, "created_at")
                 return rows
         except pymysql.Error as e:
             print(f"查询黑名单失败: {e}")
@@ -425,8 +418,7 @@ class ProxyDB:
                 )
                 rows = cursor.fetchall()
                 for row in rows:
-                    if row.get("created_at"):
-                        row["created_at"] = row["created_at"].strftime("%Y-%m-%d %H:%M:%S")
+                    format_row_datetimes(row, "created_at")
                 return rows
         except pymysql.Error as e:
             print(f"查询白名单失败: {e}")
@@ -493,8 +485,8 @@ class ProxyDB:
                         "SELECT * FROM `rate_limit_config` WHERE `task_id` IS NULL ORDER BY `created_at` DESC LIMIT 1"
                     )
                 row = cursor.fetchone()
-                if row and row.get("created_at"):
-                    row["created_at"] = row["created_at"].strftime("%Y-%m-%d %H:%M:%S")
+                if row:
+                    format_row_datetimes(row, "created_at")
                 return row
         except pymysql.Error as e:
             print(f"查询速率限制失败: {e}")

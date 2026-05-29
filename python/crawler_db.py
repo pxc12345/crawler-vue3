@@ -3,6 +3,18 @@ import os
 from datetime import datetime
 
 from db_settings import DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, DB_NAME, DB_CHARSET, DB_CA_PATH
+from src.datetime_utils import (
+    format_api_datetime,
+    format_row_datetimes,
+    get_local_day_bounds_for_query,
+    get_request_timezone,
+    get_effective_timezone,
+    get_mysql_tz_offset,
+    get_db_time_storage,
+    get_timezone_offset_hours,
+    bucket_datetimes_by_local_hour,
+    API_DATETIME_FORMAT,
+)
 
 
 class CrawlerDB:
@@ -221,8 +233,7 @@ class CrawlerDB:
                 rows = cursor.fetchall()
 
                 for row in rows:
-                    if row.get("collected_at"):
-                        row["collected_at"] = row["collected_at"].strftime("%Y-%m-%d %H:%M:%S")
+                    format_row_datetimes(row, "collected_at")
 
                 return rows, total
         except pymysql.Error as e:
@@ -267,7 +278,7 @@ class CrawlerDB:
                 )
                 last_time = cursor.fetchone()["last_time"]
                 if last_time:
-                    last_time = last_time.strftime("%Y-%m-%d %H:%M:%S")
+                    last_time = format_api_datetime(last_time)
 
                 return {
                     "total_count": total_count,
@@ -349,8 +360,7 @@ class CrawlerDB:
                 )
                 rows = cursor.fetchall()
                 for row in rows:
-                    if row.get("collected_at"):
-                        row["collected_at"] = row["collected_at"].strftime("%Y-%m-%d %H:%M:%S")
+                    format_row_datetimes(row, "collected_at")
                 return rows
         except pymysql.Error as e:
             print(f"获取全部数据失败: {e}")
@@ -410,38 +420,74 @@ class CrawlerDB:
             "total_count": self.get_count()
         }
 
-    def get_today_stats(self):
-        """获取今日统计数据：今日总数和每小时分组统计"""
+    def get_today_stats(self, tz_name=None):
+        """获取用户本地「今日」统计：hourly_breakdown[本地小时]=条数。"""
         conn = None
+        tz_name = get_effective_timezone(tz_name or get_request_timezone())
+        offset_hours = get_timezone_offset_hours(tz_name)
+        storage = get_db_time_storage()
         try:
+            start_bound, end_bound = get_local_day_bounds_for_query(tz_name)
             conn = pymysql.connect(**self._config)
             with conn.cursor() as cursor:
-                cursor.execute(
-                    "SELECT COUNT(*) AS total FROM `crawler_data` "
-                    "WHERE DATE(`collected_at`) = CURDATE()"
-                )
-                total = cursor.fetchone()["total"]
-
+                start_str = start_bound.strftime(API_DATETIME_FORMAT)
+                end_str = end_bound.strftime(API_DATETIME_FORMAT)
                 hourly = [0] * 24
-                cursor.execute(
-                    "SELECT HOUR(`collected_at`) AS h, COUNT(*) AS cnt "
-                    "FROM `crawler_data` "
-                    "WHERE DATE(`collected_at`) = CURDATE() "
-                    "GROUP BY HOUR(`collected_at`) "
-                    "ORDER BY h"
-                )
-                for row in cursor.fetchall():
-                    h = row["h"]
-                    if 0 <= h < 24:
-                        hourly[h] = row["cnt"]
+                sql_bucketed = False
+
+                # UTC 存储：SQL 层 DATE_ADD +8 再 HOUR，UTC 01:00 → 索引 9
+                if storage == "utc" and offset_hours:
+                    try:
+                        cursor.execute(
+                            "SELECT "
+                            "HOUR(DATE_ADD(`collected_at`, INTERVAL %(offset)s HOUR)) AS local_h, "
+                            "COUNT(*) AS cnt "
+                            "FROM `crawler_data` "
+                            "WHERE `collected_at` >= %(start)s AND `collected_at` < %(end)s "
+                            "GROUP BY local_h",
+                            {
+                                "start": start_str,
+                                "end": end_str,
+                                "offset": int(offset_hours),
+                            },
+                        )
+                        for row in cursor.fetchall():
+                            h = row.get("local_h")
+                            if h is not None and 0 <= int(h) < 24:
+                                hourly[int(h)] = int(row.get("cnt") or 0)
+                        sql_bucketed = True
+                    except pymysql.Error as sql_err:
+                        print(f"今日统计 SQL 分桶回退: {sql_err}")
+
+                if not sql_bucketed:
+                    cursor.execute(
+                        "SELECT `collected_at` FROM `crawler_data` "
+                        "WHERE `collected_at` >= %(start)s AND `collected_at` < %(end)s",
+                        {"start": start_str, "end": end_str},
+                    )
+                    rows = cursor.fetchall()
+                    hourly = bucket_datetimes_by_local_hour(rows, tz_name)
+
+                today_total = sum(hourly)
 
                 return {
-                    "today_total": total,
-                    "hourly_breakdown": hourly
+                    "today_total": today_total,
+                    "hourly_breakdown": hourly,
+                    "timezone": tz_name,
+                    "timezone_offset": get_mysql_tz_offset(tz_name),
+                    "db_time_storage": storage,
+                    "offset_hours": offset_hours,
                 }
         except pymysql.Error as e:
             print(f"查询今日统计失败: {e}")
-            return {"today_total": 0, "hourly_breakdown": [0] * 24}
+            return {
+                "today_total": 0,
+                "hourly_breakdown": [0] * 24,
+                "timezone": tz_name,
+                "timezone_offset": get_mysql_tz_offset(tz_name),
+                "db_time_storage": storage,
+                "offset_hours": offset_hours,
+            }
         finally:
             if conn:
                 conn.close()

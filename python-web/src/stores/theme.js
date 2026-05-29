@@ -26,6 +26,12 @@ const THEMES = {
       '--glow-color-2': 'rgba(255, 255, 255, 0.015)',
       '--avatar-bg': 'linear-gradient(135deg, #9ca3af, #4b5563)',
       '--btn-text-color': '#ffffff',
+      '--error-text': '#f87171',
+      '--error-bg': 'rgba(239, 68, 68, 0.12)',
+      '--warning-text': '#fbbf24',
+      '--warning-bg': 'rgba(251, 191, 36, 0.12)',
+      '--success-text': '#34d399',
+      '--success-bg': 'rgba(16, 185, 129, 0.12)',
     }
   },
   'space-gray': {
@@ -52,6 +58,12 @@ const THEMES = {
       '--glow-color-2': 'rgba(100, 116, 139, 0.03)',
       '--avatar-bg': 'linear-gradient(135deg, #94a3b8, #64748b)',
       '--btn-text-color': '#ffffff',
+      '--error-text': '#f87171',
+      '--error-bg': 'rgba(239, 68, 68, 0.12)',
+      '--warning-text': '#fbbf24',
+      '--warning-bg': 'rgba(251, 191, 36, 0.12)',
+      '--success-text': '#34d399',
+      '--success-bg': 'rgba(16, 185, 129, 0.12)',
     }
   },
   default: {
@@ -78,6 +90,12 @@ const THEMES = {
       '--glow-color-2': 'rgba(124, 58, 237, 0.04)',
       '--avatar-bg': 'linear-gradient(135deg, #4c6ef5, #7c3aed)',
       '--btn-text-color': '#ffffff',
+      '--error-text': '#f87171',
+      '--error-bg': 'rgba(239, 68, 68, 0.12)',
+      '--warning-text': '#fbbf24',
+      '--warning-bg': 'rgba(251, 191, 36, 0.12)',
+      '--success-text': '#34d399',
+      '--success-bg': 'rgba(16, 185, 129, 0.12)',
     }
   },
   'ice-blue': {
@@ -104,6 +122,12 @@ const THEMES = {
       '--glow-color-2': 'rgba(14, 165, 233, 0.03)',
       '--avatar-bg': 'linear-gradient(135deg, #38bdf8, #0ea5e9)',
       '--btn-text-color': '#ffffff',
+      '--error-text': '#f87171',
+      '--error-bg': 'rgba(239, 68, 68, 0.12)',
+      '--warning-text': '#fbbf24',
+      '--warning-bg': 'rgba(251, 191, 36, 0.12)',
+      '--success-text': '#34d399',
+      '--success-bg': 'rgba(16, 185, 129, 0.12)',
     }
   },
   'night-green': {
@@ -130,6 +154,12 @@ const THEMES = {
       '--glow-color-2': 'rgba(176, 109, 97, 0.03)',
       '--avatar-bg': 'linear-gradient(135deg, #d4877a, #b06d61)',
       '--btn-text-color': '#ffffff',
+      '--error-text': '#f87171',
+      '--error-bg': 'rgba(239, 68, 68, 0.12)',
+      '--warning-text': '#fbbf24',
+      '--warning-bg': 'rgba(251, 191, 36, 0.12)',
+      '--success-text': '#34d399',
+      '--success-bg': 'rgba(16, 185, 129, 0.12)',
     }
   },
   'purple-gold': {
@@ -156,6 +186,12 @@ const THEMES = {
       '--glow-color-2': 'rgba(245, 158, 11, 0.03)',
       '--avatar-bg': 'linear-gradient(135deg, #a855f7, #f59e0b)',
       '--btn-text-color': '#ffffff',
+      '--error-text': '#f87171',
+      '--error-bg': 'rgba(239, 68, 68, 0.12)',
+      '--warning-text': '#fbbf24',
+      '--warning-bg': 'rgba(251, 191, 36, 0.12)',
+      '--success-text': '#34d399',
+      '--success-bg': 'rgba(16, 185, 129, 0.12)',
     }
   },
   'cyber-aurora': {
@@ -182,6 +218,12 @@ const THEMES = {
       '--glow-color-2': 'rgba(236, 72, 153, 0.03)',
       '--avatar-bg': 'linear-gradient(135deg, #06b6d4, #ec4899)',
       '--btn-text-color': '#ffffff',
+      '--error-text': '#f87171',
+      '--error-bg': 'rgba(239, 68, 68, 0.12)',
+      '--warning-text': '#fbbf24',
+      '--warning-bg': 'rgba(251, 191, 36, 0.12)',
+      '--success-text': '#34d399',
+      '--success-bg': 'rgba(16, 185, 129, 0.12)',
     }
   },
   'elegant-white': {
@@ -213,6 +255,12 @@ const THEMES = {
       '--primary-600': '#374151',
       '--primary-700': '#1f2937',
       '--primary-800': '#111827',
+      '--error-text': '#b91c1c',
+      '--error-bg': 'rgba(185, 28, 28, 0.08)',
+      '--warning-text': '#92400e',
+      '--warning-bg': 'rgba(146, 64, 14, 0.08)',
+      '--success-text': '#166534',
+      '--success-bg': 'rgba(22, 101, 52, 0.08)',
     }
   }
 }

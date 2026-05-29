@@ -483,7 +483,6 @@ onMounted(() => {
   loadProfile()
   loadSystemSettings()
   loadPreferences()
-  themeStore.syncFromServer()
 })
 </script>
 
