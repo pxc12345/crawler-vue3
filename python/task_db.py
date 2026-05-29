@@ -116,6 +116,18 @@ class TaskDB:
                     COMMENT='任务收藏表'
                 """)
 
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS `user_recent_tasks` (
+                        `id` INT AUTO_INCREMENT PRIMARY KEY,
+                        `user_id` INT NOT NULL,
+                        `task_id` INT NOT NULL,
+                        `action` VARCHAR(50) NOT NULL DEFAULT 'view',
+                        `used_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                        UNIQUE KEY `uk_user_task` (`user_id`, `task_id`),
+                        INDEX `idx_user_used` (`user_id`, `used_at`)
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+                """)
+
                 for col_def in [
                     ("execution_time", "DECIMAL(10,2) DEFAULT NULL COMMENT '执行耗时(秒)'"),
                     ("data_count", "INT DEFAULT 0 COMMENT '采集数据条数'"),
@@ -686,6 +698,71 @@ class TaskDB:
                 return rows
         except pymysql.Error as e:
             print(f"查询收藏任务失败: {e}")
+            return []
+        finally:
+            if conn:
+                conn.close()
+
+    def count_by_user(self, user_id):
+        conn = None
+        try:
+            conn = pymysql.connect(**self._config)
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    "SELECT COUNT(*) AS total FROM `crawler_tasks` WHERE `user_id`=%(uid)s OR `user_id`=0",
+                    {"uid": user_id},
+                )
+                return cursor.fetchone()["total"]
+        except pymysql.Error:
+            return 0
+        finally:
+            if conn:
+                conn.close()
+
+    def touch_recent_task(self, user_id, task_id, action="view"):
+        conn = None
+        try:
+            conn = pymysql.connect(**self._config)
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    """
+                    INSERT INTO `user_recent_tasks` (`user_id`, `task_id`, `action`)
+                    VALUES (%(user_id)s, %(task_id)s, %(action)s)
+                    ON DUPLICATE KEY UPDATE `used_at`=NOW(), `action`=VALUES(`action`)
+                    """,
+                    {"user_id": user_id, "task_id": task_id, "action": action},
+                )
+            conn.commit()
+            return True
+        except pymysql.Error as e:
+            print(f"记录最近任务失败: {e}")
+            return False
+        finally:
+            if conn:
+                conn.close()
+
+    def get_recent_tasks(self, user_id, limit=10):
+        conn = None
+        try:
+            conn = pymysql.connect(**self._config)
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT t.*, r.`used_at`, r.`action` AS last_action
+                    FROM `user_recent_tasks` r
+                    INNER JOIN `crawler_tasks` t ON t.`id` = r.`task_id`
+                    WHERE r.`user_id` = %(user_id)s
+                    ORDER BY r.`used_at` DESC
+                    LIMIT %(limit)s
+                    """,
+                    {"user_id": user_id, "limit": limit},
+                )
+                rows = cursor.fetchall()
+                for row in rows:
+                    format_row_datetimes(row, "used_at", "updated_at", "created_at")
+                return rows
+        except pymysql.Error as e:
+            print(f"查询最近任务失败: {e}")
             return []
         finally:
             if conn:

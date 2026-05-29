@@ -67,6 +67,7 @@
         <router-link to="/guide" class="nav-link" :class="{ active: $route.path === '/guide' }">使用说明</router-link>
 
         <div class="nav-user">
+          <router-link to="/workspace" class="nav-user-link">工作台</router-link>
           <div class="user-avatar">{{ authStore.user?.username?.charAt(0)?.toUpperCase() }}</div>
           <span class="user-name">{{ authStore.user?.username }}</span>
           <router-link to="/settings" class="btn-settings">
@@ -278,6 +279,15 @@ async function handleLogout() {
   background: var(--active-bg);
 }
 
+.nav-user-link {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-muted);
+  text-decoration: none;
+  padding: 4px 8px;
+  border-radius: 6px;
+}
+.nav-user-link:hover { color: var(--text-primary); background: rgba(255,255,255,0.06); }
 .nav-user {
   display: flex;
   align-items: center;

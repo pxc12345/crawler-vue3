@@ -93,11 +93,14 @@ import { useRouter } from 'vue-router'
 import { taskAPI } from '../api/task'
 import { buildTaskRunCreatePayload, shouldCloneTaskBeforeStart } from '../utils/taskCopy'
 import { systemAPI } from '../api/system'
+import { userAPI } from '../api'
+import { useAuthStore } from '../stores/auth'
 import NavBar from '../components/NavBar.vue'
 
 const router = useRouter()
+const authStore = useAuthStore()
 
-const username = ref('Admin')
+const username = ref(authStore.user?.username || '用户')
 const userInitial = computed(() => username.value.charAt(0).toUpperCase())
 
 const totalTasks = ref(0)
@@ -155,14 +158,28 @@ async function fetchFavorites() {
 
 async function fetchRecentTasks() {
   try {
+    const res = await userAPI.getRecentTasks({ limit: 8 })
+    if (res.data.success && (res.data.data || []).length) {
+      recentTasks.value = (res.data.data || []).map(t => ({
+        id: t.id,
+        name: t.name || '未知任务',
+        time: t.used_at || t.updated_at || '-',
+        action: t.last_action === 'start' ? '已启动' : '最近查看'
+      }))
+      return
+    }
+  } catch (error) {
+    /* fallback */
+  }
+  try {
     const res = await taskAPI.getTasks({ page_size: 5 })
     if (res.data.success) {
-      const list = res.data.data.list || res.data.data || []
+      const list = res.data.data?.list || res.data.data || []
       recentTasks.value = list.map(t => ({
         id: t.id,
         name: t.name || '未知任务',
-        time: t.updated_at || t.time || '-',
-        action: t.last_action || '被修改'
+        time: t.updated_at || '-',
+        action: '最近更新'
       }))
     }
   } catch (error) {
@@ -189,6 +206,7 @@ async function fetchStats() {
 }
 
 onMounted(() => {
+  if (authStore.user?.username) username.value = authStore.user.username
   fetchFavorites()
   fetchRecentTasks()
   fetchStats()

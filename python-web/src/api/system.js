@@ -13,6 +13,18 @@ export const systemAPI = {
     return api.get('/system/resources')
   },
 
+  getTaskResources() {
+    return api.get('/system/task-resources')
+  },
+
+  reloadConfig() {
+    return api.post('/system/reload-config')
+  },
+
+  restartCrawlers() {
+    return api.post('/system/restart-crawlers')
+  },
+
   getDashboardStats() {
     return api.get('/system/dashboard-stats')
   },

@@ -186,7 +186,8 @@ class CrawlerEngine:
         proxies_list = self._crawl_options.get("proxies") or []
         if not proxies_list:
             return None
-        return random.choice(proxies_list)
+        proxy_url = random.choice(proxies_list)
+        return {"http": proxy_url, "https": proxy_url}
 
     def _retry_wait(self, attempt, status_code=0, response=None):
         base = max(int(self._crawl_options.get("retry_interval") or 3), 1)
@@ -282,8 +283,7 @@ class CrawlerEngine:
         if not HAS_CURL_CFFI:
             raise Exception("curl_cffi 未安装")
         timeout = max(int(self._crawl_options.get("timeout") or 22), 5)
-        proxy = self._pick_proxy()
-        proxies = {"http": proxy, "https": proxy} if proxy else None
+        proxies = self._pick_proxy()
         headers = self._get_headers(url, referer=referer or url)
         last_error = None
 
@@ -314,8 +314,7 @@ class CrawlerEngine:
         if not HAS_CLOUDSCRAPER:
             raise Exception("cloudscraper 未安装")
         timeout = max(int(self._crawl_options.get("timeout") or 22), 5)
-        proxy = self._pick_proxy()
-        proxies = {"http": proxy, "https": proxy} if proxy else None
+        proxies = self._pick_proxy()
         scraper = cloudscraper.create_scraper(
             browser={"browser": "chrome", "platform": "windows", "mobile": False}
         )
@@ -778,6 +777,26 @@ class CrawlerEngine:
                     current_url = target_url
 
                 try:
+                    from proxy_db import proxy_db
+                    allowed, block_reason = proxy_db.is_url_allowed(current_url)
+                    if not allowed:
+                        _emit_log(
+                            "WARNING",
+                            f"URL 被{block_reason}规则拦截，跳过: {current_url[:100]}",
+                        )
+                        if page < total_pages and not self._stop_flag.is_set():
+                            rl = self._crawl_options.get("rate_limit") or {}
+                            time.sleep(
+                                max(
+                                    interval_seconds,
+                                    rl.get("request_interval", 1),
+                                )
+                            )
+                        continue
+                except Exception:
+                    pass
+
+                try:
                     html, fetch_via = self._fetch_page(
                         session, current_url, referer=referer or target_url
                     )
@@ -832,7 +851,13 @@ class CrawlerEngine:
                     _emit_log("WARNING", f"任务[{self._task_id}] 第{page}页未解析到数据")
 
                 if page < total_pages and not self._stop_flag.is_set():
-                    time.sleep(max(interval_seconds, 1))
+                    rl = self._crawl_options.get("rate_limit") or {}
+                    sleep_sec = max(
+                        interval_seconds,
+                        rl.get("request_interval", 1),
+                        1,
+                    )
+                    time.sleep(sleep_sec)
 
         except Exception as e:
             self._error_message = f"爬取过程异常: {str(e)}"
@@ -912,7 +937,8 @@ class CrawlerEngine:
             protocol = (row.get("protocol") or "http").lower()
             if not ip or not port:
                 continue
-            result.append(f"{protocol}://{ip}:{port}")
+            scheme = protocol if protocol in ("socks5", "socks4") else "http"
+            result.append(f"{scheme}://{ip}:{port}")
         return result
 
     def start(
@@ -946,6 +972,17 @@ class CrawlerEngine:
         proxy_group = self._crawl_options.get("proxy_group") or ""
         if proxy_group:
             self._crawl_options["proxies"] = self._load_proxies_for_group(proxy_group)
+
+        try:
+            from proxy_db import proxy_db
+            rl = proxy_db.get_effective_rate_limit(task_id)
+            self._crawl_options["rate_limit"] = rl
+            self._crawl_options["max_retries"] = max(
+                int(self._crawl_options.get("max_retries", 3)),
+                int(rl.get("retry_count", 3)),
+            )
+        except Exception:
+            self._crawl_options.setdefault("rate_limit", {})
 
         self._task_id = task_id
         self._crawl_thread = threading.Thread(

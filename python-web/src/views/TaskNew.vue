@@ -100,7 +100,10 @@
         <div class="form-row">
           <div class="form-group full">
             <label class="form-label">代理组</label>
-            <input v-model="form.proxyGroup" type="text" class="form-input" placeholder="留空则不使用代理组" />
+            <select v-model="form.proxyGroup" class="form-input">
+              <option value="">不使用代理组</option>
+              <option v-for="g in proxyGroups" :key="g.id" :value="g.name">{{ g.name }}</option>
+            </select>
           </div>
         </div>
         <div class="form-row">
@@ -133,6 +136,7 @@ import { useRouter, useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import NavBar from '../components/NavBar.vue'
 import { taskAPI } from '../api/task'
+import { proxyAPI } from '../api/proxy'
 import {
   categoryLabel,
   buildTemplateConfig,
@@ -144,6 +148,7 @@ const route = useRoute()
 const creating = ref(false)
 const applyingTemplate = ref(false)
 const templateList = ref([])
+const proxyGroups = ref([])
 const selectedTemplateId = ref('')
 const appliedTemplateName = ref('')
 
@@ -260,6 +265,14 @@ async function createTask() {
 
 onMounted(async () => {
   await loadTemplateList()
+  try {
+    const gRes = await proxyAPI.getProxyGroups()
+    if (gRes.data.success) {
+      proxyGroups.value = gRes.data.data || []
+    }
+  } catch (e) {
+    proxyGroups.value = []
+  }
   const qid = route.query.templateId
   if (qid) {
     selectedTemplateId.value = String(qid)

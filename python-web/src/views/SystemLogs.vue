@@ -192,14 +192,20 @@ async function exportLogs() {
 async function fetchLogs() {
   try {
     const params = {
-      page: currentPage.value,
-      page_size: pageSize
+      page: 1,
+      page_size: 500
     }
     if (activeLevel.value !== 'ALL') params.level = activeLevel.value
     if (logSearch.value) params.keyword = logSearch.value
+    if (logDateFrom.value) params.date_from = logDateFrom.value
+    if (logDateTo.value) params.date_to = logDateTo.value
     const res = await systemAPI.getLogs(params)
     if (res.data.success) {
-      allLogs.value = (res.data.data.list || res.data.data || []).map((l, i) => ({ ...l, id: l.id || i + 1 }))
+      allLogs.value = (res.data.data.list || res.data.data || []).map((l, i) => ({
+        ...l,
+        id: l.id || i + 1,
+        time: l.time || l.created_at || ''
+      }))
     }
   } catch (error) {
     ElMessage.error('获取日志失败')
@@ -218,6 +224,10 @@ watch(currentPage, () => {
   nextTick(() => {
     if (terminalBody.value) terminalBody.value.scrollTop = 0
   })
+})
+
+watch([activeLevel, logSearch, logDateFrom, logDateTo], () => {
+  fetchLogs()
 })
 
 onMounted(() => {

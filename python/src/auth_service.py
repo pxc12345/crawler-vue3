@@ -165,7 +165,8 @@ class AuthService:
     def login_required(self, f):
         @wraps(f)
         def decorated_function(*args, **kwargs):
-            # 装饰器不处理 OPTIONS，由全局 before_request 处理
+            if request.method == 'OPTIONS':
+                return '', 204
             auth_header = request.headers.get('Authorization')
             if not auth_header:
                 return jsonify({'success': False, 'message': '未提供认证令牌', 'code': 'TOKEN_MISSING'}), 401

@@ -102,6 +102,18 @@ export const userAPI = {
 
   updateProfile(data) {
     return api.put('/user/profile', data)
+  },
+
+  uploadAvatar(file) {
+    const formData = new FormData()
+    formData.append('file', file)
+    return api.post('/user/avatar', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    })
+  },
+
+  getRecentTasks(params) {
+    return api.get('/user/recent-tasks', { params })
   }
 }
 

@@ -1,3 +1,4 @@
+import json
 import pymysql
 import os
 from datetime import datetime
@@ -99,6 +100,29 @@ class CrawlerDB:
                 cursor.execute("SHOW COLUMNS FROM `crawler_data` LIKE 'task_id'")
                 if not cursor.fetchone():
                     cursor.execute("ALTER TABLE `crawler_data` ADD COLUMN `task_id` INT DEFAULT NULL COMMENT '关联任务ID' AFTER `type`")
+
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS `data_auto_write_config` (
+                        `id` INT AUTO_INCREMENT PRIMARY KEY,
+                        `user_id` INT NOT NULL,
+                        `target_type` VARCHAR(32) NOT NULL DEFAULT 'mysql',
+                        `target_config` JSON,
+                        `enabled` TINYINT(1) NOT NULL DEFAULT 0,
+                        `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                        UNIQUE KEY `uk_user` (`user_id`)
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+                """)
+
+                cursor.execute("""
+                    CREATE TABLE IF NOT EXISTS `data_push_config` (
+                        `id` INT AUTO_INCREMENT PRIMARY KEY,
+                        `user_id` INT NOT NULL,
+                        `push_type` VARCHAR(32) NOT NULL DEFAULT 'mixed',
+                        `push_config` JSON,
+                        `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                        UNIQUE KEY `uk_user` (`user_id`)
+                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+                """)
             
             conn.commit()
             conn.close()
@@ -381,16 +405,7 @@ class CrawlerDB:
                     VALUES (%(title)s, %(link)s, %(image_url)s, %(content)s, %(source_url)s, %(page_number)s, %(type)s, %(task_id)s)
                 """
                 for item in items:
-                    cursor.execute(sql, {
-                        "title": item.get("title", ""),
-                        "link": item.get("link", ""),
-                        "image_url": item.get("image_url", ""),
-                        "content": item.get("content", ""),
-                        "source_url": item.get("source_url", ""),
-                        "page_number": item.get("page_number", 1),
-                        "type": item.get("type", "link"),
-                        "task_id": item.get("task_id"),
-                    })
+                    cursor.execute(sql, self._item_params(item))
             conn.commit()
             return True
         except pymysql.Error as e:
@@ -399,6 +414,239 @@ class CrawlerDB:
         finally:
             if conn:
                 conn.close()
+
+    def _item_params(self, item):
+        return {
+            "title": item.get("title", ""),
+            "link": item.get("link", ""),
+            "image_url": item.get("image_url", ""),
+            "content": item.get("content", ""),
+            "source_url": item.get("source_url", ""),
+            "page_number": item.get("page_number", 1),
+            "type": item.get("type", "link"),
+            "task_id": item.get("task_id"),
+        }
+
+    def bulk_upsert(self, items):
+        """按 id 更新或插入，避免 TRUNCATE 误删未加载数据"""
+        if not items:
+            return True, 0
+        conn = None
+        updated = 0
+        try:
+            conn = pymysql.connect(**self._config)
+            with conn.cursor() as cursor:
+                insert_sql = """
+                    INSERT INTO `crawler_data`
+                    (`title`, `link`, `image_url`, `content`, `source_url`, `page_number`, `type`, `task_id`)
+                    VALUES (%(title)s, %(link)s, %(image_url)s, %(content)s, %(source_url)s, %(page_number)s, %(type)s, %(task_id)s)
+                """
+                update_sql = """
+                    UPDATE `crawler_data` SET
+                    `title`=%(title)s, `link`=%(link)s, `image_url`=%(image_url)s,
+                    `content`=%(content)s, `source_url`=%(source_url)s, `page_number`=%(page_number)s,
+                    `type`=%(type)s, `task_id`=%(task_id)s
+                    WHERE `id`=%(id)s
+                """
+                for item in items:
+                    params = self._item_params(item)
+                    rid = item.get("id")
+                    if rid:
+                        params["id"] = int(rid)
+                        cursor.execute(update_sql, params)
+                        if cursor.rowcount:
+                            updated += 1
+                        else:
+                            cursor.execute(insert_sql, params)
+                            updated += 1
+                    else:
+                        cursor.execute(insert_sql, params)
+                        updated += 1
+            conn.commit()
+            return True, updated
+        except pymysql.Error as e:
+            print(f"批量 upsert 失败: {e}")
+            return False, 0
+        finally:
+            if conn:
+                conn.close()
+
+    def get_export_list(self, task_id=None, date_from=None, date_to=None):
+        rows, _ = self.get_list(
+            page=1, page_size=100000, keyword="",
+            task_id=task_id, date_from=date_from, date_to=date_to
+        )
+        return rows
+
+    def save_auto_write_config(self, user_id, target_type, target_config, enabled=None):
+        conn = None
+        try:
+            cfg = target_config if isinstance(target_config, dict) else {}
+            if enabled is None:
+                enabled = cfg.get("auto_write", cfg.get("enabled", False))
+            conn = pymysql.connect(**self._config)
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    INSERT INTO `data_auto_write_config`
+                    (`user_id`, `target_type`, `target_config`, `enabled`)
+                    VALUES (%(user_id)s, %(target_type)s, %(config)s, %(enabled)s)
+                    ON DUPLICATE KEY UPDATE
+                    `target_type`=VALUES(`target_type`),
+                    `target_config`=VALUES(`target_config`),
+                    `enabled`=VALUES(`enabled`)
+                """, {
+                    "user_id": user_id,
+                    "target_type": target_type or "mysql",
+                    "config": json.dumps(cfg, ensure_ascii=False),
+                    "enabled": 1 if enabled else 0,
+                })
+            conn.commit()
+            return True, None
+        except pymysql.Error as e:
+            return False, str(e)
+        finally:
+            if conn:
+                conn.close()
+
+    def get_auto_write_config(self, user_id):
+        conn = None
+        try:
+            conn = pymysql.connect(**self._config)
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    "SELECT * FROM `data_auto_write_config` WHERE `user_id`=%(uid)s",
+                    {"uid": user_id},
+                )
+                row = cursor.fetchone()
+                if not row:
+                    return None
+                cfg = row.get("target_config")
+                if isinstance(cfg, str):
+                    cfg = json.loads(cfg) if cfg else {}
+                row["target_config"] = cfg or {}
+                return row
+        except pymysql.Error:
+            return None
+        finally:
+            if conn:
+                conn.close()
+
+    def save_push_config(self, user_id, push_type, push_config):
+        conn = None
+        try:
+            cfg = push_config if isinstance(push_config, dict) else {}
+            conn = pymysql.connect(**self._config)
+            with conn.cursor() as cursor:
+                cursor.execute("""
+                    INSERT INTO `data_push_config`
+                    (`user_id`, `push_type`, `push_config`)
+                    VALUES (%(user_id)s, %(push_type)s, %(config)s)
+                    ON DUPLICATE KEY UPDATE
+                    `push_type`=VALUES(`push_type`),
+                    `push_config`=VALUES(`push_config`)
+                """, {
+                    "user_id": user_id,
+                    "push_type": push_type or "mixed",
+                    "config": json.dumps(cfg, ensure_ascii=False),
+                })
+            conn.commit()
+            return True, None
+        except pymysql.Error as e:
+            return False, str(e)
+        finally:
+            if conn:
+                conn.close()
+
+    def get_push_config(self, user_id):
+        conn = None
+        try:
+            conn = pymysql.connect(**self._config)
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    "SELECT * FROM `data_push_config` WHERE `user_id`=%(uid)s",
+                    {"uid": user_id},
+                )
+                row = cursor.fetchone()
+                if not row:
+                    return None
+                cfg = row.get("push_config")
+                if isinstance(cfg, str):
+                    cfg = json.loads(cfg) if cfg else {}
+                row["push_config"] = cfg or {}
+                return row
+        except pymysql.Error:
+            return None
+        finally:
+            if conn:
+                conn.close()
+
+    def test_external_db_connection(self, config):
+        """测试外部数据库连接"""
+        cfg = config or {}
+        db_type = (cfg.get("db_type") or cfg.get("target_type") or "mysql").lower()
+        if db_type not in ("mysql", "postgresql"):
+            return False, "仅支持 MySQL / PostgreSQL"
+        try:
+            if db_type == "postgresql":
+                import psycopg2
+                conn = psycopg2.connect(
+                    host=cfg.get("host", "localhost"),
+                    port=int(cfg.get("port", 5432)),
+                    user=cfg.get("user", ""),
+                    password=cfg.get("password", ""),
+                    dbname=cfg.get("database", cfg.get("dbname", "")),
+                    connect_timeout=5,
+                )
+                conn.close()
+            else:
+                conn = pymysql.connect(
+                    host=cfg.get("host", "localhost"),
+                    port=int(cfg.get("port", 3306)),
+                    user=cfg.get("user", ""),
+                    password=cfg.get("password", ""),
+                    database=cfg.get("database", ""),
+                    charset="utf8mb4",
+                    connect_timeout=5,
+                )
+                conn.close()
+            return True, None
+        except Exception as e:
+            return False, str(e)
+
+    def sync_auto_write_for_user(self, user_id, items):
+        """爬虫入库后同步到用户配置的外部库"""
+        cfg_row = self.get_auto_write_config(user_id)
+        if not cfg_row or not cfg_row.get("enabled"):
+            return
+        cfg = cfg_row.get("target_config") or {}
+        if not cfg.get("host") and not cfg.get("database"):
+            return
+        table = cfg.get("table", "collected_data")
+        try:
+            conn = pymysql.connect(
+                host=cfg.get("host", "localhost"),
+                port=int(cfg.get("port", 3306)),
+                user=cfg.get("user", ""),
+                password=cfg.get("password", ""),
+                database=cfg.get("database", ""),
+                charset="utf8mb4",
+            )
+            with conn.cursor() as cursor:
+                for item in items:
+                    cursor.execute(
+                        f"INSERT INTO `{table}` (`title`, `link`, `content`, `source_url`) "
+                        "VALUES (%(title)s, %(link)s, %(content)s, %(source_url)s)",
+                        {
+                            "title": item.get("title", ""),
+                            "link": item.get("link", ""),
+                            "content": item.get("content", ""),
+                            "source_url": item.get("source_url", ""),
+                        },
+                    )
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            print(f"自动入库同步失败: {e}")
 
     def get_count(self):
         """获取数据总条数"""

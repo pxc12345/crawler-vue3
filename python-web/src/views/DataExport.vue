@@ -52,7 +52,7 @@
             <label class="filter-label">关联任务</label>
             <select v-model="taskFilter" class="input input-select">
               <option value="">全部任务</option>
-              <option v-for="t in taskOptions" :key="t" :value="t">{{ t }}</option>
+              <option v-for="t in taskOptions" :key="t.id" :value="t.id">{{ t.name }}</option>
             </select>
           </div>
         </div>
@@ -133,6 +133,7 @@
               <input type="checkbox" v-model="autoWriteEnabled" />
               <span>启用自动入库</span>
             </label>
+            <button type="button" class="btn-test" style="margin-top:12px" @click="saveAutoWrite">保存自动入库配置</button>
           </div>
         </div>
       </div>
@@ -197,6 +198,7 @@
               </label>
             </div>
           </div>
+          <button type="button" class="btn-test" style="margin-top:12px" @click="savePush">保存推送配置</button>
         </div>
       </div>
 
@@ -227,6 +229,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { dataAPI } from '../api/data'
+import { taskAPI } from '../api/task'
 import NavBar from '../components/NavBar.vue'
 
 const exportFormat = ref('csv')
@@ -282,21 +285,64 @@ const previewRows = computed(() => {
 
 const emailSubject = computed(() => `[CrawlMaster] 数据导出报告 - ${new Date().toLocaleDateString('zh-CN')}`)
 
+function autoWritePayload(testOnly = false) {
+  return {
+    test_only: testOnly,
+    db_type: dbType.value,
+    target_type: dbType.value,
+    host: dbHost.value,
+    port: dbPort.value,
+    user: dbUser.value,
+    password: dbPass.value,
+    database: dbName.value,
+    table: dbTable.value,
+    auto_write: autoWriteEnabled.value
+  }
+}
+
 async function testConnection() {
   try {
-    await dataAPI.autoWriteConfig({
-      db_type: dbType.value,
-      host: dbHost.value,
-      port: dbPort.value,
-      user: dbUser.value,
-      password: dbPass.value,
-      database: dbName.value,
-      table: dbTable.value,
-      auto_write: autoWriteEnabled.value
-    })
-    ElMessage.success('数据库连接测试成功')
+    const res = await dataAPI.autoWriteConfig(autoWritePayload(true))
+    if (res.data.success) {
+      ElMessage.success('数据库连接测试成功')
+    } else {
+      ElMessage.error(res.data.message || '数据库连接测试失败')
+    }
   } catch (error) {
-    ElMessage.error('数据库连接测试失败')
+    ElMessage.error(error.response?.data?.message || '数据库连接测试失败')
+  }
+}
+
+async function saveAutoWrite() {
+  try {
+    const res = await dataAPI.autoWriteConfig(autoWritePayload(false))
+    if (res.data.success) {
+      ElMessage.success('自动入库配置已保存')
+    } else {
+      ElMessage.error(res.data.message || '保存失败')
+    }
+  } catch (error) {
+    ElMessage.error(error.response?.data?.message || '保存失败')
+  }
+}
+
+async function savePush() {
+  try {
+    const res = await dataAPI.pushConfig({
+      push_email: pushEmail.value,
+      push_wechat: pushWechat.value,
+      email_recipient: emailRecipient.value,
+      wechat_webhook: wechatWebhook.value,
+      push_after_crawl: pushAfterCrawl.value,
+      push_daily: pushDaily.value
+    })
+    if (res.data.success) {
+      ElMessage.success('推送配置已保存')
+    } else {
+      ElMessage.error(res.data.message || '保存失败')
+    }
+  } catch (error) {
+    ElMessage.error(error.response?.data?.message || '保存失败')
   }
 }
 
@@ -306,7 +352,11 @@ async function doExport() {
   try {
     const { downloadFile } = await import('../api/index')
     const fields = selectedFields.value.join(',')
-    await downloadFile('/data/export?fields=' + fields, `exported_data.${exportFormat.value}`, exportFormat.value)
+    const params = new URLSearchParams({ fields, format: exportFormat.value })
+    if (dateFrom.value) params.set('date_from', dateFrom.value)
+    if (dateTo.value) params.set('date_to', dateTo.value)
+    if (taskFilter.value) params.set('task_id', String(taskFilter.value))
+    await downloadFile('/data/export?' + params.toString(), `exported_data.${exportFormat.value}`, exportFormat.value)
     exporting.value = false
     exportSuccess.value = true
     ElMessage.success('数据导出成功')
@@ -326,10 +376,49 @@ onMounted(async () => {
   try {
     const res = await dataAPI.getDataList({ page_size: 5 })
     if (res.data.success) {
-      previewData.value = res.data.data.list || res.data.data || []
+      previewData.value = res.data.data?.list || res.data.data || []
     }
   } catch (error) {
     previewData.value = []
+  }
+  try {
+    const tRes = await taskAPI.getTasks({ page_size: 100 })
+    if (tRes.data.success) {
+      const list = tRes.data.data?.list || tRes.data.data || []
+      taskOptions.value = list.map(t => ({ id: t.id, name: t.name || `任务 ${t.id}` }))
+    }
+  } catch (error) {
+    taskOptions.value = []
+  }
+  try {
+    const cfg = await dataAPI.getAutoWriteConfig()
+    if (cfg.data.success && cfg.data.data?.target_config) {
+      const c = cfg.data.data.target_config
+      dbType.value = c.db_type || cfg.data.data.target_type || 'mysql'
+      dbHost.value = c.host || 'localhost'
+      dbPort.value = String(c.port || '3306')
+      dbUser.value = c.user || ''
+      dbPass.value = c.password || ''
+      dbName.value = c.database || ''
+      dbTable.value = c.table || 'collected_data'
+      autoWriteEnabled.value = !!cfg.data.data.enabled
+    }
+  } catch (error) {
+    /* ignore */
+  }
+  try {
+    const pCfg = await dataAPI.getPushConfig()
+    if (pCfg.data.success && pCfg.data.data?.push_config) {
+      const c = pCfg.data.data.push_config
+      pushEmail.value = !!c.push_email
+      pushWechat.value = !!c.push_wechat
+      emailRecipient.value = c.email || ''
+      wechatWebhook.value = c.wechat_webhook || ''
+      pushAfterCrawl.value = !!c.push_after_crawl
+      pushDaily.value = !!c.push_daily
+    }
+  } catch (error) {
+    /* ignore */
   }
 })
 </script>

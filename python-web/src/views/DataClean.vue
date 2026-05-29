@@ -89,30 +89,47 @@
         <div class="card right-panel">
           <h3 class="panel-title">
             数据预览
-            <span class="preview-count">{{ previewData.length }} 条</span>
+            <span class="preview-count">{{ displayData.length }} 条</span>
           </h3>
+          <div class="filter-card">
+            <div class="filter-row">
+              <div class="filter-input">
+                <svg class="filter-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                <input v-model="tableKeyword" placeholder="搜索标题、内容、链接..." class="input" />
+              </div>
+              <div class="column-toggle-wrapper">
+                <button type="button" class="btn-column" @click="showColumnMenu = !showColumnMenu">列显示</button>
+                <div v-if="showColumnMenu" class="column-menu">
+                  <label v-for="col in columns" :key="col.key" class="column-option">
+                    <input type="checkbox" v-model="col.visible" />
+                    <span>{{ col.label }}</span>
+                  </label>
+                </div>
+              </div>
+            </div>
+          </div>
           <div class="table-wrap">
             <table class="data-table">
               <thead>
                 <tr>
                   <th>#</th>
-                  <th>标题</th>
-                  <th>链接</th>
-                  <th>内容</th>
-                  <th>来源</th>
-                  <th>采集时间</th>
+                  <th v-if="columnVisible('title')" class="sortable" @click="toggleSort('title')">标题 {{ sortIndicator('title') }}</th>
+                  <th v-if="columnVisible('link')" class="sortable" @click="toggleSort('link')">链接 {{ sortIndicator('link') }}</th>
+                  <th v-if="columnVisible('content')" class="sortable" @click="toggleSort('content')">内容 {{ sortIndicator('content') }}</th>
+                  <th v-if="columnVisible('source_url')" class="sortable" @click="toggleSort('source_url')">来源 {{ sortIndicator('source_url') }}</th>
+                  <th v-if="columnVisible('collected_at')" class="sortable" @click="toggleSort('collected_at')">采集时间 {{ sortIndicator('collected_at') }}</th>
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="(row, idx) in previewData" :key="idx">
+                <tr v-for="(row, idx) in displayData" :key="row.id || idx">
                   <td class="td-idx">{{ idx + 1 }}</td>
-                  <td class="td-title">{{ row.title || '-' }}</td>
-                  <td class="td-link">{{ row.link || '-' }}</td>
-                  <td class="td-content">{{ (row.content || '-').slice(0, 30) }}{{ row.content && row.content.length > 30 ? '...' : '' }}</td>
-                  <td class="td-source">{{ row.source_url || '-' }}</td>
-                  <td class="td-time">{{ row.collected_at || '-' }}</td>
+                  <td v-if="columnVisible('title')" class="td-title">{{ row.title || '-' }}</td>
+                  <td v-if="columnVisible('link')" class="td-link">{{ row.link || '-' }}</td>
+                  <td v-if="columnVisible('content')" class="td-content">{{ (row.content || '-').slice(0, 30) }}{{ row.content && row.content.length > 30 ? '...' : '' }}</td>
+                  <td v-if="columnVisible('source_url')" class="td-source">{{ row.source_url || '-' }}</td>
+                  <td v-if="columnVisible('collected_at')" class="td-time">{{ row.collected_at || '-' }}</td>
                 </tr>
-                <tr v-if="previewData.length === 0">
+                <tr v-if="displayData.length === 0">
                   <td colspan="6" class="td-empty">暂无数据</td>
                 </tr>
               </tbody>
@@ -125,10 +142,13 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
+import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { dataAPI } from '../api/data'
 import NavBar from '../components/NavBar.vue'
+
+const route = useRoute()
 
 const processing = ref(false)
 const activeOp = ref('')
@@ -146,6 +166,65 @@ const formatResult = ref('')
 const rawData = ref([])
 const previewData = ref([])
 
+const tableKeyword = ref('')
+const showColumnMenu = ref(false)
+const sortKey = ref('collected_at')
+const sortDir = ref('desc')
+
+const columns = ref([
+  { key: 'title', label: '标题', visible: true },
+  { key: 'link', label: '链接', visible: true },
+  { key: 'content', label: '内容', visible: true },
+  { key: 'source_url', label: '来源', visible: true },
+  { key: 'collected_at', label: '采集时间', visible: true }
+])
+
+function columnVisible(key) {
+  const col = columns.value.find(c => c.key === key)
+  return col ? col.visible : true
+}
+
+function sortIndicator(key) {
+  if (sortKey.value !== key) return '↕'
+  return sortDir.value === 'asc' ? '↑' : '↓'
+}
+
+function toggleSort(key) {
+  if (sortKey.value === key) {
+    sortDir.value = sortDir.value === 'asc' ? 'desc' : 'asc'
+  } else {
+    sortKey.value = key
+    sortDir.value = 'asc'
+  }
+}
+
+const displayData = computed(() => {
+  let rows = [...previewData.value]
+  const kw = tableKeyword.value.trim().toLowerCase()
+  if (kw) {
+    rows = rows.filter(r =>
+      ['title', 'content', 'link', 'source_url'].some(f =>
+        String(r[f] || '').toLowerCase().includes(kw)
+      )
+    )
+  }
+  const key = sortKey.value
+  const dir = sortDir.value === 'asc' ? 1 : -1
+  rows.sort((a, b) => {
+    const va = a[key] ?? ''
+    const vb = b[key] ?? ''
+    if (va < vb) return -1 * dir
+    if (va > vb) return 1 * dir
+    return 0
+  })
+  return rows
+})
+
+function parseCleanItems(res) {
+  const d = res.data?.data
+  return d?.items || d?.list || (Array.isArray(d) ? d : [])
+}
+
 async function runDedup() {
   activeOp.value = 'dedup'
   processing.value = true
@@ -155,10 +234,13 @@ async function runDedup() {
     if (progressPercent.value >= 100) clearInterval(interval)
   }, 150)
   try {
-    const res = await dataAPI.cleanData({ operation: 'deduplicate', data: previewData.value })
+    const res = await dataAPI.cleanData({
+      operations: ['deduplicate'],
+      data: previewData.value
+    })
     if (res.data.success) {
       const before = previewData.value.length
-      previewData.value = res.data.data || res.data.data.list || []
+      previewData.value = parseCleanItems(res)
       const removed = before - previewData.value.length
       dedupResult.value = `已去除 ${removed} 条重复数据`
       hasChanges.value = removed > 0
@@ -181,13 +263,13 @@ async function runNullFilter() {
   }, 120)
   try {
     const res = await dataAPI.cleanData({
-      operation: 'filter_empty',
+      operations: ['filter_empty'],
       data: previewData.value,
       fields: [nullFilterField.value]
     })
     if (res.data.success) {
       const before = previewData.value.length
-      previewData.value = res.data.data || res.data.data.list || []
+      previewData.value = parseCleanItems(res)
       const removed = before - previewData.value.length
       nullFilterResult.value = `已过滤 ${removed} 条空值数据`
       hasChanges.value = removed > 0
@@ -210,13 +292,13 @@ async function runFormat() {
   }, 100)
   try {
     const res = await dataAPI.cleanData({
-      operation: 'format_convert',
+      operations: ['format_convert'],
       data: previewData.value,
       field: formatField.value,
       format: formatType.value === 'timestamp' ? 'timestamp_to_date' : formatType.value
     })
     if (res.data.success) {
-      const resultData = res.data.data || res.data.data.list || []
+      const resultData = parseCleanItems(res)
       let count = 0
       previewData.value.forEach((row, idx) => {
         if (JSON.stringify(row) !== JSON.stringify(resultData[idx])) count++
@@ -237,7 +319,7 @@ async function applyChanges() {
   processing.value = true
   try {
     const res = await dataAPI.cleanData({
-      operations: ['deduplicate', 'filter_empty'],
+      operations: [],
       data: previewData.value,
       save_to_db: true
     })
@@ -272,9 +354,13 @@ function resetData() {
 
 onMounted(async () => {
   try {
-    const res = await dataAPI.getDataList({ page_size: 50 })
+    const params = { page_size: 500 }
+    const taskId = route.query.task_id
+    if (taskId) params.task_id = taskId
+    const res = await dataAPI.getDataList(params)
     if (res.data.success) {
-      rawData.value = (res.data.data.list || res.data.data || []).map(r => ({ ...r }))
+      const list = res.data.data?.list || res.data.data || []
+      rawData.value = list.map(r => ({ ...r }))
       previewData.value = rawData.value.map(r => ({ ...r }))
     }
   } catch (error) {
@@ -341,6 +427,27 @@ onMounted(async () => {
   font-size: 11px; font-weight: 500; color: var(--text-muted);
   padding: 2px 8px; background: rgba(255,255,255,0.04); border-radius: 6px;
 }
+.filter-card { margin-bottom: 12px; }
+.filter-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.filter-input { flex: 1; min-width: 160px; position: relative; }
+.filter-icon {
+  position: absolute; left: 10px; top: 50%; transform: translateY(-50%);
+  width: 14px; height: 14px; color: var(--text-muted); pointer-events: none;
+}
+.filter-input .input { padding-left: 32px; }
+.column-toggle-wrapper { position: relative; }
+.btn-column {
+  padding: 8px 12px; font-size: 12px; font-weight: 500;
+  background: rgba(255,255,255,0.04); border: 1px solid var(--border-color);
+  border-radius: 8px; color: var(--text-secondary); cursor: pointer;
+}
+.column-menu {
+  position: absolute; right: 0; top: 100%; margin-top: 4px; z-index: 10;
+  padding: 8px; background: var(--bg-card); border: 1px solid var(--border-color);
+  border-radius: 8px; min-width: 120px;
+}
+.column-option { display: flex; align-items: center; gap: 6px; font-size: 12px; padding: 4px 0; color: var(--text-secondary); cursor: pointer; }
+.data-table th.sortable { cursor: pointer; user-select: none; }
 .op-section {
   padding: 16px; margin-bottom: 12px;
   background: rgba(255, 255, 255, 0.02);

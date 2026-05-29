@@ -25,8 +25,19 @@ export const proxyAPI = {
     return api.post('/proxy/groups', data)
   },
 
+  deleteProxyGroup(id) {
+    return api.delete(`/proxy/groups/${id}`)
+  },
+
   assignProxyToGroup(data) {
     return api.post('/proxy/groups/assign', data)
+  },
+
+  syncGroupProxies(groupId, proxyIds) {
+    return api.post('/proxy/groups/sync', {
+      group_id: groupId,
+      proxy_ids: proxyIds
+    })
   },
 
   getBlacklist() {

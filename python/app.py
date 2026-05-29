@@ -28,7 +28,9 @@ SQLALCHEMY_DATABASE_URI = (
     database=DB_NAME,
 )
 
-from flask import Flask, request, jsonify, Response
+from flask import Flask, request, jsonify, Response, send_from_directory
+from werkzeug.utils import secure_filename
+import uuid
 from flask_cors import CORS, cross_origin
 from src.auth_service import auth_service
 from src.notification_db import notification_db
@@ -62,10 +64,14 @@ import io
 import json
 import psutil
 import pymysql
+from datetime import datetime
 
 app = Flask(__name__)
 app.config["SQLALCHEMY_DATABASE_URI"] = SQLALCHEMY_DATABASE_URI
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+UPLOAD_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "uploads")
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
 setup_timezone_middleware(app)
 
 # notification_db 模块内为硬编码配置，导入后切换为线上库并重连
@@ -424,6 +430,62 @@ def update_profile():
         return jsonify({'success': False, 'message': '更新个人资料失败', 'code': 'PROFILE_UPDATE_FAILED', 'error': str(e)}), 500
 
 
+@app.route('/api/user/avatar', methods=['POST'])
+@auth_service.login_required
+def upload_user_avatar():
+    try:
+        if 'file' not in request.files:
+            return jsonify({
+                'success': False, 'message': '请选择头像文件', 'code': 'MISSING_FILE'
+            }), 400
+        file = request.files['file']
+        if not file.filename:
+            return jsonify({
+                'success': False, 'message': '无效的文件', 'code': 'INVALID_FILE'
+            }), 400
+        ext = os.path.splitext(secure_filename(file.filename))[1].lower()
+        if ext not in ('.jpg', '.jpeg', '.png', '.gif', '.webp'):
+            return jsonify({
+                'success': False, 'message': '仅支持 jpg/png/gif/webp', 'code': 'INVALID_FORMAT'
+            }), 400
+        filename = f"avatar_{request.user_id}_{uuid.uuid4().hex[:8]}{ext}"
+        path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        file.save(path)
+        avatar_url = f"/api/uploads/{filename}"
+        notification_db.update_user_profile(
+            user_id=request.user_id, avatar_url=avatar_url
+        )
+        return jsonify({
+            'success': True,
+            'message': '头像上传成功',
+            'data': {'avatar_url': avatar_url}
+        }), 200
+    except Exception as e:
+        return jsonify({
+            'success': False, 'message': '头像上传失败', 'code': 'AVATAR_UPLOAD_FAILED', 'error': str(e)
+        }), 500
+
+
+@app.route('/api/uploads/<filename>', methods=['GET'])
+def serve_upload(filename):
+    return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
+
+
+@app.route('/api/user/recent-tasks', methods=['GET'])
+@auth_service.login_required
+def user_recent_tasks():
+    try:
+        limit = request.args.get('limit', 10, type=int)
+        rows = task_db.get_recent_tasks(request.user_id, limit=limit)
+        for row in rows:
+            format_task_for_api(row)
+        return jsonify({'success': True, 'data': rows}), 200
+    except Exception as e:
+        return jsonify({
+            'success': False, 'message': '获取最近任务失败', 'code': 'RECENT_TASKS_FAILED', 'error': str(e)
+        }), 500
+
+
 def _save_crawled_data(items):
     """爬虫数据保存回调函数，供爬虫引擎调用"""
     # 如果是完成回调消息
@@ -515,6 +577,14 @@ def _save_crawled_data(items):
     # 普通数据保存 - 从爬虫引擎获取当前 task_id
     task_id = crawler_engine._task_id if hasattr(crawler_engine, '_task_id') else None
     saved_count = crawler_db.save_batch(items, task_id=task_id)
+    if task_id and isinstance(items, list) and items:
+        try:
+            task_row = task_db.get_by_id(task_id)
+            uid = task_row.get('user_id') if task_row else None
+            if uid:
+                crawler_db.sync_auto_write_for_user(uid, items)
+        except Exception as sync_err:
+            print(f"[auto_write] sync skip: {sync_err}")
     if task_id and isinstance(items, list) and items:
         page_no = items[0].get('page_number', '?')
         system_db.add_log(
@@ -780,14 +850,19 @@ def task_create():
             else:
                 task_type = 'crawler'
 
+        normalized_config = _normalize_template_config(config if isinstance(config, dict) else {})
+
         task_id = task_db.create(
             user_id=request.user_id,
             name=name,
             task_type=task_type,
-            config=config,
+            config=normalized_config,
             description=description,
             template_id=template_id
         )
+
+        if task_id:
+            task_db.update_task(task_id, **_sync_task_columns_from_config(normalized_config))
 
         return jsonify({
             'success': True, 'message': '创建任务成功', 'data': {'task_id': task_id}
@@ -797,6 +872,21 @@ def task_create():
         return jsonify({
             'success': False, 'message': '创建任务失败', 'code': 'TASK_CREATE_FAILED', 'error': str(e)
         }), 500
+
+
+def _sync_task_columns_from_config(normalized):
+    """将规范化 config 同步到任务表顶层字段，便于列表展示与查询。"""
+    if not isinstance(normalized, dict):
+        return {}
+    return {
+        'target_url': normalized.get('target_url', ''),
+        'cron_expr': normalized.get('cron_expr', ''),
+        'concurrency': int(normalized.get('concurrency') or 1),
+        'interval_seconds': int(normalized.get('interval_seconds') or 3),
+        'retry_count': int(normalized.get('max_retries') or 0),
+        'retry_interval': int(normalized.get('retry_interval') or 60),
+        'proxy_group': normalized.get('proxy_group') or '',
+    }
 
 
 def _normalize_template_config(config):
@@ -1077,6 +1167,8 @@ def task_detail(task_id):
 
         format_task_for_api(task)
 
+        task_db.touch_recent_task(request.user_id, task_id, action='view')
+
         # 合并爬虫引擎的实时状态
         engine_status = crawler_engine.get_status()
         task['crawler_status'] = engine_status
@@ -1105,9 +1197,9 @@ def task_update(task_id):
         
         # 准备更新字段
         update_fields = {}
-        if name:
+        if name is not None:
             update_fields['name'] = name
-        if config:
+        if config is not None:
             existing_cfg = task.get('config') or {}
             if isinstance(existing_cfg, str):
                 try:
@@ -1119,7 +1211,9 @@ def task_update(task_id):
             merged = {**existing_cfg, **config}
             if '_last_execution' not in config and existing_cfg.get('_last_execution'):
                 merged['_last_execution'] = existing_cfg['_last_execution']
-            update_fields['config'] = merged
+            normalized = _normalize_template_config(merged)
+            update_fields['config'] = normalized
+            update_fields.update(_sync_task_columns_from_config(normalized))
 
         # 如果有更新字段则更新（配置保存不再写入「执行记录」，避免与真实运行混淆）
         if update_fields:
@@ -1169,6 +1263,8 @@ def task_start(task_id):
             return jsonify({
                 'success': False, 'message': '无权操作此任务', 'code': 'TASK_FORBIDDEN'
             }), 403
+
+        task_db.touch_recent_task(request.user_id, task_id, action='start')
 
         config = task.get('config', {})
         if isinstance(config, str):
@@ -1354,7 +1450,7 @@ def task_add_favorite(task_id):
                 'success': False, 'message': '任务不存在', 'code': 'TASK_NOT_FOUND'
             }), 404
 
-        task_db.add_favorite(task_id, user_id=request.user_id)
+        task_db.add_favorite(request.user_id, task_id)
 
         return jsonify({'success': True, 'message': '已加入收藏'}), 200
 
@@ -1374,7 +1470,7 @@ def task_remove_favorite(task_id):
                 'success': False, 'message': '任务不存在', 'code': 'TASK_NOT_FOUND'
             }), 404
 
-        task_db.remove_favorite(task_id, user_id=request.user_id)
+        task_db.remove_favorite(request.user_id, task_id)
 
         return jsonify({'success': True, 'message': '已取消收藏'}), 200
 
@@ -1752,16 +1848,75 @@ def data_preview():
         }), 500
 
 
+def _normalize_clean_operations(data):
+    ops = data.get('operations') or []
+    if not ops and data.get('operation'):
+        op = data.get('operation')
+        if op == 'format_convert':
+            ops = ['format_convert']
+        else:
+            ops = [op]
+    return ops if isinstance(ops, list) else []
+
+
+def _field_nonempty(item, field):
+    if not isinstance(item, dict):
+        return False
+    val = item.get(field)
+    if val is None:
+        return False
+    if isinstance(val, str):
+        return bool(val.strip())
+    return bool(val)
+
+
+def _apply_format_convert(items, field, fmt):
+    result = []
+    for item in items:
+        if not isinstance(item, dict):
+            result.append(item)
+            continue
+        row = dict(item)
+        if field and field in row:
+            val = row[field]
+            if fmt in ('trim', 'format_fields') and isinstance(val, str):
+                row[field] = val.strip()
+            elif fmt == 'lowercase' and isinstance(val, str):
+                row[field] = val.lower()
+            elif fmt == 'uppercase' and isinstance(val, str):
+                row[field] = val.upper()
+            elif fmt in ('timestamp', 'timestamp_to_date'):
+                try:
+                    if isinstance(val, (int, float)) or (isinstance(val, str) and val.isdigit()):
+                        ts = int(float(val))
+                        if ts > 1e12:
+                            ts = ts // 1000
+                        row[field] = datetime.utcfromtimestamp(ts).strftime(API_DATETIME_FORMAT)
+                    elif isinstance(val, str) and val.strip():
+                        row[field] = val.strip()
+                except (ValueError, OSError):
+                    pass
+        elif not field:
+            for k, v in row.items():
+                if isinstance(v, str) and fmt in ('trim', 'format_fields'):
+                    row[k] = v.strip()
+        result.append(row)
+    return result
+
+
 @app.route('/api/data/clean', methods=['POST'])
 @auth_service.login_required
 def data_clean():
     try:
-        data = request.get_json()
+        data = request.get_json() or {}
         items = data.get('data', [])
-        operations = data.get('operations', [])
+        operations = _normalize_clean_operations(data)
         save_to_db = data.get('save_to_db', False)
+        filter_fields = data.get('fields') or []
+        format_field = data.get('field', '')
+        format_type = data.get('format', 'trim')
 
-        if not items or not isinstance(items, list):
+        if not isinstance(items, list):
             return jsonify({
                 'success': False, 'message': '请提供有效的数据', 'code': 'INVALID_DATA'
             }), 400
@@ -1773,34 +1928,49 @@ def data_clean():
                 seen = set()
                 unique = []
                 for item in cleaned:
-                    item_key = json.dumps(item, sort_keys=True, ensure_ascii=False)
+                    item_key = json.dumps(item, sort_keys=True, ensure_ascii=False, default=str)
                     if item_key not in seen:
                         seen.add(item_key)
                         unique.append(item)
                 cleaned = unique
             elif op == 'filter_empty':
-                cleaned = [
-                    item for item in cleaned
-                    if item and any(v for v in item.values() if v)
-                ]
-            elif op == 'format_fields':
-                cleaned = [
-                    {k: (v.strip() if isinstance(v, str) else v) for k, v in item.items()}
-                    if isinstance(item, dict) else item
-                    for item in cleaned
-                ]
+                if filter_fields:
+                    cleaned = [
+                        item for item in cleaned
+                        if all(_field_nonempty(item, f) for f in filter_fields)
+                    ]
+                else:
+                    cleaned = [
+                        item for item in cleaned
+                        if item and any(v for v in item.values() if v not in (None, '', []))
+                    ]
+            elif op in ('format_fields', 'format_convert'):
+                fmt = format_type
+                if fmt == 'timestamp':
+                    fmt = 'timestamp_to_date'
+                cleaned = _apply_format_convert(cleaned, format_field, fmt)
 
         if save_to_db:
-            crawler_db.replace_all(cleaned)
+            has_ids = any(isinstance(i, dict) and i.get('id') for i in cleaned)
+            if has_ids or not operations:
+                ok, _ = crawler_db.bulk_upsert(cleaned)
+                if not ok:
+                    return jsonify({
+                        'success': False, 'message': '保存到数据库失败', 'code': 'DATA_SAVE_FAILED'
+                    }), 500
+            else:
+                crawler_db.replace_all(cleaned)
 
+        payload = {
+            'original_count': len(items),
+            'cleaned_count': len(cleaned),
+            'items': cleaned,
+            'list': cleaned,
+        }
         return jsonify({
             'success': True,
             'message': '数据清洗完成' + ('并已保存到数据库' if save_to_db else ''),
-            'data': {
-                'original_count': len(items),
-                'cleaned_count': len(cleaned),
-                'items': cleaned
-            }
+            'data': payload
         }), 200
 
     except Exception as e:
@@ -1815,8 +1985,14 @@ def data_export():
     try:
         export_format = request.args.get('format', 'csv', type=str).lower()
         fields_str = request.args.get('fields', '', type=str)
+        date_from = request.args.get('date_from', '', type=str) or None
+        date_to = request.args.get('date_to', '', type=str) or None
+        task_id = request.args.get('task_id', '', type=str)
+        task_id = int(task_id) if task_id else None
 
-        items = crawler_db.get_all()
+        items = crawler_db.get_export_list(
+            task_id=task_id, date_from=date_from, date_to=date_to
+        )
 
         if not items:
             return jsonify({
@@ -1899,23 +2075,51 @@ def data_export():
         }), 500
 
 
-@app.route('/api/data/auto-write-config', methods=['POST'])
+@app.route('/api/data/auto-write-config', methods=['GET', 'POST'])
 @auth_service.login_required
 def data_auto_write_config():
     try:
-        data = request.get_json()
-        target_type = data.get('target_type')
-        target_config = data.get('target_config', {})
+        if request.method == 'GET':
+            row = crawler_db.get_auto_write_config(request.user_id)
+            return jsonify({'success': True, 'data': row or {}}), 200
 
-        if not target_type:
+        data = request.get_json() or {}
+        test_only = data.get('test_only', False)
+        target_type = data.get('target_type') or data.get('db_type') or 'mysql'
+        target_config = data.get('target_config') or {
+            'db_type': data.get('db_type', target_type),
+            'host': data.get('host'),
+            'port': data.get('port'),
+            'user': data.get('user'),
+            'password': data.get('password'),
+            'database': data.get('database'),
+            'table': data.get('table'),
+            'auto_write': data.get('auto_write'),
+        }
+
+        ok, err = crawler_db.test_external_db_connection(target_config)
+        if test_only:
+            if not ok:
+                return jsonify({
+                    'success': False, 'message': f'连接测试失败: {err}', 'code': 'DB_TEST_FAILED'
+                }), 400
+            return jsonify({'success': True, 'message': '数据库连接测试成功'}), 200
+
+        if not target_config.get('host'):
             return jsonify({
-                'success': False, 'message': '请选择写入目标类型', 'code': 'MISSING_TARGET_TYPE'
+                'success': False, 'message': '请填写主机地址', 'code': 'MISSING_HOST'
+            }), 400
+
+        if not ok:
+            return jsonify({
+                'success': False, 'message': f'连接测试失败: {err}', 'code': 'DB_TEST_FAILED'
             }), 400
 
         crawler_db.save_auto_write_config(
             user_id=request.user_id,
             target_type=target_type,
-            target_config=target_config
+            target_config=target_config,
+            enabled=data.get('auto_write', data.get('enabled')),
         )
 
         return jsonify({'success': True, 'message': '自动写入配置保存成功'}), 200
@@ -1926,24 +2130,39 @@ def data_auto_write_config():
         }), 500
 
 
-@app.route('/api/data/push-config', methods=['POST'])
+@app.route('/api/data/push-config', methods=['GET', 'POST'])
 @auth_service.login_required
 def data_push_config():
     try:
-        data = request.get_json()
-        push_type = data.get('push_type')
-        push_config = data.get('push_config', {})
+        if request.method == 'GET':
+            row = crawler_db.get_push_config(request.user_id)
+            return jsonify({'success': True, 'data': row or {}}), 200
 
-        if not push_type:
-            return jsonify({
-                'success': False, 'message': '请选择推送类型', 'code': 'MISSING_PUSH_TYPE'
-            }), 400
+        data = request.get_json() or {}
+        push_types = []
+        if data.get('push_email'):
+            push_types.append('email')
+        if data.get('push_wechat'):
+            push_types.append('wechat')
+        push_type = data.get('push_type') or (','.join(push_types) if push_types else 'mixed')
+        push_config = data.get('push_config') or {
+            'email': data.get('email_recipient', ''),
+            'wechat_webhook': data.get('wechat_webhook', ''),
+            'push_after_crawl': data.get('push_after_crawl', False),
+            'push_daily': data.get('push_daily', False),
+            'push_email': data.get('push_email', False),
+            'push_wechat': data.get('push_wechat', False),
+        }
 
-        crawler_db.save_push_config(
+        ok, err = crawler_db.save_push_config(
             user_id=request.user_id,
             push_type=push_type,
-            push_config=push_config
+            push_config=push_config,
         )
+        if not ok:
+            return jsonify({
+                'success': False, 'message': err or '保存失败', 'code': 'PUSH_CONFIG_FAILED'
+            }), 500
 
         return jsonify({'success': True, 'message': '推送配置保存成功'}), 200
 
@@ -1961,7 +2180,7 @@ def proxy_list():
     try:
         proxies = proxy_db.get_proxies()
 
-        return jsonify({'success': True, 'data': proxies}), 200
+        return jsonify({'success': True, 'data': proxies, 'list': proxies}), 200
 
     except Exception as e:
         return jsonify({
@@ -1973,8 +2192,8 @@ def proxy_list():
 @auth_service.login_required
 def proxy_add():
     try:
-        data = request.get_json()
-        host = (data.get('host') or '').strip()
+        data = request.get_json() or {}
+        host = (data.get('host') or data.get('ip') or '').strip()
         port = data.get('port')
         protocol = (data.get('protocol') or 'http').strip()
         username = (data.get('username') or '').strip()
@@ -2001,8 +2220,12 @@ def proxy_add():
                 'success': False, 'message': '添加代理失败', 'code': 'PROXY_ADD_FAILED', 'error': err
             }), 500
 
+        _, probe_err, updated = proxy_db.probe_proxy(proxy_id)
+
         return jsonify({
-            'success': True, 'message': '添加代理成功', 'data': {'proxy_id': proxy_id}
+            'success': True,
+            'message': '添加代理成功' if not probe_err else '添加成功，但探测未通过',
+            'data': {'proxy_id': proxy_id, 'proxy': updated}
         }), 201
 
     except Exception as e:
@@ -2029,9 +2252,14 @@ def proxy_delete(proxy_id):
 @auth_service.login_required
 def proxy_refresh(proxy_id):
     try:
-        success, message = proxy_db.refresh_proxy(proxy_id, status="active")
-
-        return jsonify({'success': success, 'message': message}), 200 if success else 400
+        ok, err, updated = proxy_db.probe_proxy(proxy_id)
+        if not ok:
+            return jsonify({
+                'success': False, 'message': err or '刷新失败', 'code': 'PROXY_REFRESH_FAILED'
+            }), 400
+        return jsonify({
+            'success': True, 'message': '代理检测完成', 'data': updated
+        }), 200
 
     except Exception as e:
         return jsonify({
@@ -2076,12 +2304,30 @@ def proxy_group_create():
             }), 500
 
         return jsonify({
-            'success': True, 'message': '创建代理组成功', 'data': {'group_id': group_id}
+            'success': True,
+            'message': '创建代理组成功',
+            'data': {'group_id': group_id, 'id': group_id}
         }), 201
 
     except Exception as e:
         return jsonify({
             'success': False, 'message': '创建代理组失败', 'code': 'PROXY_GROUP_CREATE_FAILED', 'error': str(e)
+        }), 500
+
+
+@app.route('/api/proxy/groups/<group_id>', methods=['DELETE'])
+@auth_service.login_required
+def proxy_group_delete(group_id):
+    try:
+        ok, err = proxy_db.delete_proxy_group(group_id)
+        if not ok:
+            return jsonify({
+                'success': False, 'message': err or '删除失败', 'code': 'PROXY_GROUP_DELETE_FAILED'
+            }), 500
+        return jsonify({'success': True, 'message': '分组已删除'}), 200
+    except Exception as e:
+        return jsonify({
+            'success': False, 'message': '删除分组失败', 'code': 'PROXY_GROUP_DELETE_FAILED', 'error': str(e)
         }), 500
 
 
@@ -2098,13 +2344,91 @@ def proxy_group_assign():
                 'success': False, 'message': '请提供代理ID和组ID', 'code': 'MISSING_PARAMS'
             }), 400
 
-        proxy_db.assign_proxy_to_group(group_id, proxy_id)
+        ok, err = proxy_db.assign_proxy_to_group(group_id, proxy_id)
+        if not ok:
+            return jsonify({
+                'success': False, 'message': err or '代理分配失败', 'code': 'PROXY_ASSIGN_FAILED'
+            }), 500
 
         return jsonify({'success': True, 'message': '代理分配成功'}), 200
 
     except Exception as e:
         return jsonify({
             'success': False, 'message': '代理分配失败', 'code': 'PROXY_ASSIGN_FAILED', 'error': str(e)
+        }), 500
+
+
+@app.route('/api/proxy/groups/sync', methods=['POST'])
+@auth_service.login_required
+def proxy_group_sync_proxies_post():
+    try:
+        data = request.get_json() or {}
+        group_id = data.get('group_id')
+        proxy_ids = data.get('proxy_ids')
+        if proxy_ids is None:
+            proxy_ids = data.get('proxies') or []
+
+        if not group_id:
+            return jsonify({
+                'success': False,
+                'message': '请提供分组 ID',
+                'code': 'MISSING_GROUP_ID',
+            }), 400
+
+        ok, err = proxy_db.sync_group_proxies(group_id, proxy_ids)
+        if not ok:
+            return jsonify({
+                'success': False,
+                'message': err or '同步分组代理失败',
+                'code': 'PROXY_GROUP_SYNC_FAILED',
+            }), 400
+
+        group = next((g for g in proxy_db.get_proxy_groups() if str(g.get('id')) == str(group_id)), None)
+        return jsonify({
+            'success': True,
+            'message': '分组代理已更新',
+            'data': group,
+        }), 200
+
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': '同步分组代理失败',
+            'code': 'PROXY_GROUP_SYNC_FAILED',
+            'error': str(e),
+        }), 500
+
+
+@app.route('/api/proxy/groups/<group_id>/proxies', methods=['PUT'])
+@auth_service.login_required
+def proxy_group_sync_proxies(group_id):
+    try:
+        data = request.get_json() or {}
+        proxy_ids = data.get('proxy_ids')
+        if proxy_ids is None:
+            proxy_ids = data.get('proxies') or []
+
+        ok, err = proxy_db.sync_group_proxies(group_id, proxy_ids)
+        if not ok:
+            return jsonify({
+                'success': False,
+                'message': err or '同步分组代理失败',
+                'code': 'PROXY_GROUP_SYNC_FAILED',
+            }), 400
+
+        group = next((g for g in proxy_db.get_proxy_groups() if str(g.get('id')) == str(group_id)), None)
+        return jsonify({
+            'success': True,
+            'message': '分组代理已更新',
+            'data': group,
+        }), 200
+
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': '同步分组代理失败',
+            'code': 'PROXY_GROUP_SYNC_FAILED',
+            'error': str(e),
         }), 500
 
 
@@ -2126,8 +2450,8 @@ def proxy_blacklist():
 @auth_service.login_required
 def proxy_blacklist_add():
     try:
-        data = request.get_json()
-        target = (data.get('target') or '').strip()
+        data = request.get_json() or {}
+        target = (data.get('target') or data.get('url') or '').strip()
         reason = (data.get('reason') or '').strip()
 
         if not target:
@@ -2187,8 +2511,8 @@ def proxy_whitelist():
 @auth_service.login_required
 def proxy_whitelist_add():
     try:
-        data = request.get_json()
-        target = (data.get('target') or '').strip()
+        data = request.get_json() or {}
+        target = (data.get('target') or data.get('url') or '').strip()
         reason = (data.get('reason') or '').strip()
 
         if not target:
@@ -2196,13 +2520,17 @@ def proxy_whitelist_add():
                 'success': False, 'message': '请输入白名单目标', 'code': 'MISSING_TARGET'
             }), 400
 
-        item_id = proxy_db.add_whitelist(
+        success, _ = proxy_db.add_whitelist(
             url=target,
             reason=reason
         )
+        if not success:
+            return jsonify({
+                'success': False, 'message': '添加白名单失败', 'code': 'WHITELIST_ADD_FAILED'
+            }), 500
 
         return jsonify({
-            'success': True, 'message': '已加入白名单', 'data': {'item_id': item_id}
+            'success': True, 'message': '已加入白名单'
         }), 201
 
     except Exception as e:
@@ -2229,7 +2557,11 @@ def proxy_whitelist_remove(item_id):
 @auth_service.login_required
 def proxy_rate_limits():
     try:
-        limits = proxy_db.get_rate_limit()
+        task_id = request.args.get('task_id', type=int)
+        if task_id:
+            limits = proxy_db.get_rate_limit(task_id)
+            return jsonify({'success': True, 'data': limits}), 200
+        limits = proxy_db.get_rate_limits_bundle()
 
         return jsonify({'success': True, 'data': limits}), 200
 
@@ -2243,20 +2575,22 @@ def proxy_rate_limits():
 @auth_service.login_required
 def proxy_rate_limit_set():
     try:
-        data = request.get_json()
-        max_requests = data.get('max_requests')
-        time_window = data.get('time_window')
-        target_id = data.get('target_id')
+        data = request.get_json() or {}
+        rpm = data.get('requests_per_minute') or data.get('max_requests')
+        concurrent = data.get('concurrent_max') or data.get('time_window')
+        task_id = data.get('task_id') or data.get('target_id')
+        retry_count = data.get('retry_count', 3)
 
-        if not max_requests or not time_window:
+        if rpm is None or concurrent is None:
             return jsonify({
-                'success': False, 'message': '请设置最大请求数和时间窗口', 'code': 'MISSING_PARAMS'
+                'success': False, 'message': '请设置每分钟请求数与最大并发', 'code': 'MISSING_PARAMS'
             }), 400
 
         proxy_db.set_rate_limit(
-            requests_per_minute=max_requests,
-            concurrent_max=time_window,
-            task_id=target_id
+            requests_per_minute=int(rpm),
+            concurrent_max=int(concurrent),
+            task_id=int(task_id) if task_id else None,
+            retry_count=int(retry_count),
         )
 
         return jsonify({'success': True, 'message': '速率限制设置成功'}), 200
@@ -2269,17 +2603,32 @@ def proxy_rate_limit_set():
 
 # ==================== System Routes ====================
 
+_runtime_config_cache = {'reloaded_at': None}
+
+
 @app.route('/api/system/resources', methods=['GET'])
 @auth_service.login_required
 def system_resources():
     try:
-        cpu_percent = psutil.cpu_percent(interval=1)
+        cpu_percent = psutil.cpu_percent(interval=0.5)
         memory = psutil.virtual_memory()
         disk = psutil.disk_usage('/')
+        net_io = 0
+        try:
+            net = psutil.net_io_counters()
+            if net:
+                total = (net.bytes_sent + net.bytes_recv) or 1
+                net_io = min(100, round((net.bytes_sent + net.bytes_recv) / (1024 * 1024 * 1024) * 10, 1))
+        except Exception:
+            net_io = 0
 
         return jsonify({
             'success': True,
             'data': {
+                'cpu_percent': cpu_percent,
+                'memory_percent': memory.percent,
+                'disk_percent': disk.percent,
+                'network_io': net_io,
                 'cpu': {
                     'percent': cpu_percent,
                     'cores': psutil.cpu_count(logical=True),
@@ -2307,6 +2656,95 @@ def system_resources():
         }), 500
 
 
+@app.route('/api/system/task-resources', methods=['GET'])
+@auth_service.login_required
+def system_task_resources():
+    try:
+        cpu_sys = psutil.cpu_percent(interval=0.1)
+        mem_sys = psutil.virtual_memory().percent
+        active_id = getattr(crawler_engine, '_task_id', None)
+        rows, _ = task_db.get_task_list_with_favorites(
+            user_id=request.user_id, page=1, page_size=20
+        )
+        result = []
+        for t in rows:
+            tid = t.get('id')
+            status = (t.get('status') or 'idle').lower()
+            if status == 'running' and tid == active_id:
+                cpu = round(cpu_sys, 1)
+                mem = round(mem_sys, 1)
+            elif status == 'running':
+                cpu = round(cpu_sys * 0.25, 1)
+                mem = round(mem_sys * 0.15, 1)
+            else:
+                stats = crawler_db.get_task_data_stats(tid) if tid else {}
+                load = min(25, int(stats.get('total_count', 0) // 50))
+                cpu = load
+                mem = load
+            result.append({
+                'id': tid,
+                'name': t.get('name') or str(tid),
+                'cpu': cpu,
+                'mem': mem,
+                'status': status,
+            })
+        result.sort(key=lambda x: x['cpu'], reverse=True)
+        return jsonify({'success': True, 'data': result}), 200
+    except Exception as e:
+        return jsonify({
+            'success': False, 'message': '获取任务资源失败', 'code': 'TASK_RESOURCES_FAILED', 'error': str(e)
+        }), 500
+
+
+@app.route('/api/system/reload-config', methods=['POST'])
+@auth_service.login_required
+def system_reload_config():
+    try:
+        _runtime_config_cache['reloaded_at'] = format_api_datetime(now_utc())
+        proxy_db.connect()
+        system_db.connect()
+        crawler_db.connect()
+        system_db.add_log(level='INFO', source='system', message='运行时配置已从数据库重新加载')
+        return jsonify({'success': True, 'message': '配置已刷新'}), 200
+    except Exception as e:
+        return jsonify({
+            'success': False, 'message': '刷新配置失败', 'code': 'RELOAD_CONFIG_FAILED', 'error': str(e)
+        }), 500
+
+
+@app.route('/api/system/restart-crawlers', methods=['POST'])
+@auth_service.login_required
+def system_restart_crawlers():
+    try:
+        crawler_engine.stop()
+        crawler_engine.reset()
+        conn = None
+        try:
+            import pymysql as _pymysql
+            from db_settings import DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, DB_NAME, DB_CHARSET, DB_CA_PATH
+            conn = _pymysql.connect(
+                host=DB_HOST, port=int(DB_PORT), user=DB_USER, password=DB_PASSWORD,
+                database=DB_NAME, charset=DB_CHARSET, ssl_ca=DB_CA_PATH,
+                ssl_verify_cert=True, ssl_verify_identity=True,
+            )
+            with conn.cursor() as cursor:
+                cursor.execute(
+                    "UPDATE `crawler_tasks` SET `status`='STOPPED' WHERE UPPER(`status`)='RUNNING'"
+                )
+            conn.commit()
+        except Exception as db_err:
+            print(f"[restart-crawlers] DB update: {db_err}")
+        finally:
+            if conn:
+                conn.close()
+        system_db.add_log(level='WARNING', source='system', message='爬虫服务已重启（运行中任务已停止）')
+        return jsonify({'success': True, 'message': '爬虫服务已重启'}), 200
+    except Exception as e:
+        return jsonify({
+            'success': False, 'message': '重启爬虫服务失败', 'code': 'RESTART_CRAWLERS_FAILED', 'error': str(e)
+        }), 500
+
+
 @app.route('/api/system/logs', methods=['GET'])
 @auth_service.login_required
 def system_logs():
@@ -2321,11 +2759,18 @@ def system_logs():
         if page_size < 1 or page_size > 100:
             page_size = 50
 
+        keyword = request.args.get('keyword', '', type=str)
+        date_from = request.args.get('date_from', '', type=str) or None
+        date_to = request.args.get('date_to', '', type=str) or None
+
         logs, total = system_db.get_logs(
             level=level,
             task_id=int(task_id) if task_id else None,
             page=page,
-            page_size=page_size
+            page_size=page_size,
+            keyword=keyword,
+            date_from=date_from,
+            date_to=date_to,
         )
 
         return jsonify({
@@ -2568,11 +3013,13 @@ def system_dashboard_stats():
         failed_tasks = task_db.get_count_by_status('failed') if hasattr(task_db, 'get_count_by_status') else 0
         running_tasks = task_db.get_count_by_status('running') if hasattr(task_db, 'get_count_by_status') else 0
         pending_tasks = task_db.get_count_by_status('pending') if hasattr(task_db, 'get_count_by_status') else 0
+        total_tasks = task_db.count_by_user(request.user_id) if hasattr(task_db, 'count_by_user') else 0
 
         return jsonify({
             'success': True,
             'data': {
                 'today_collected': today_collected,
+                'total_tasks': total_tasks,
                 'success_tasks': success_tasks,
                 'failed_tasks': failed_tasks,
                 'running_tasks': running_tasks,

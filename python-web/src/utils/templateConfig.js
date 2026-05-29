@@ -38,6 +38,36 @@ export function parseTemplateConfig(raw) {
   return {}
 }
 
+/** 任务详情编辑：从任务 + config 回填表单（与新建任务字段一致） */
+export function applyConfigToTaskDetailForm(form, task, config) {
+  const cfg = parseTemplateConfig(config)
+  const t = task || {}
+  form.name = t.name || ''
+  form.targetUrl = t.target_url || cfg.target_url || ''
+  form.taskType = cfg.task_type || t.task_type || 'crawler'
+  form.description = t.description || ''
+  form.intervalMinutes = cronToMinutes(cfg.cron_expr || t.cron_expr)
+  form.concurrency = cfg.concurrency ?? t.concurrency ?? 1
+  const sec = cfg.interval_seconds ?? cfg.interval ?? t.interval_seconds
+  form.intervalSeconds = sec != null && sec > 60 ? Math.round(sec / 1000) : (Number(sec) || 3)
+  form.maxRetries = cfg.max_retries ?? cfg.maxRetries ?? t.retry_count ?? 3
+  form.retryInterval = cfg.retry_interval ?? t.retry_interval ?? 60
+  form.crawlMode = cfg.crawl_mode || 'link'
+  form.totalPages = cfg.total_pages ?? 1
+  form.proxyGroup = cfg.proxy_group || t.proxy_group || ''
+  if (typeof cfg.headers === 'object') {
+    form.headers = JSON.stringify(cfg.headers, null, 2)
+  } else {
+    form.headers = cfg.headers || ''
+  }
+  return cfg
+}
+
+/** 任务详情编辑：构建保存用 config（与新建任务一致） */
+export function buildTaskDetailConfig(form) {
+  return buildTemplateConfig(form)
+}
+
 /** 从表单构建完整模板 config（与任务创建一致） */
 export function buildTemplateConfig(form) {
   let headers = form.headers

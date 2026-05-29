@@ -5,6 +5,9 @@
       <div class="page-header">
         <h1 class="page-title">资源看板</h1>
         <div class="header-right">
+          <button type="button" class="btn-action" @click="reloadConfig">刷新配置</button>
+          <button type="button" class="btn-action" @click="restartCrawlers">重启爬虫</button>
+          <button type="button" class="btn-action" @click="router.push('/system-logs')">系统日志</button>
           <span class="refresh-tag" :class="{ refreshing: isRefreshing }">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
@@ -83,7 +86,7 @@
                 </td>
                 <td><span class="status-tag" :class="'s-' + t.status">{{ t.status === 'running' ? '运行中' : t.status === 'idle' ? '空闲' : '已停止' }}</span></td>
                 <td>
-                  <button class="btn-sm" @click="ElMessage.info('查看详情: ' + t.name)">详情</button>
+                  <button class="btn-sm" @click="goTaskDetail(t)">详情</button>
                 </td>
               </tr>
             </tbody>
@@ -118,10 +121,12 @@
 
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { ElMessage } from 'element-plus'
+import { useRouter } from 'vue-router'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { systemAPI } from '../api/system'
-import { taskAPI } from '../api/task'
 import NavBar from '../components/NavBar.vue'
+
+const router = useRouter()
 
 const isRefreshing = ref(false)
 const cpuHistory = ref([])
@@ -196,9 +201,9 @@ async function refreshGauges() {
     const res = await systemAPI.getResources()
     if (res.data.success) {
       const data = res.data.data
-      gauges.value[0].value = data.cpu_percent ?? 0
-      gauges.value[1].value = data.memory_percent ?? 0
-      gauges.value[2].value = data.disk_percent ?? 0
+      gauges.value[0].value = data.cpu_percent ?? data.cpu?.percent ?? 0
+      gauges.value[1].value = data.memory_percent ?? data.memory?.percent ?? 0
+      gauges.value[2].value = data.disk_percent ?? data.disk?.percent ?? 0
       gauges.value[3].value = data.network_io ?? 0
     }
   } catch (error) {
@@ -222,27 +227,63 @@ async function saveThresholds() {
   }
 }
 
+async function loadTaskResources() {
+  try {
+    const res = await systemAPI.getTaskResources()
+    if (res.data.success) {
+      tasks.value = (res.data.data || []).map(t => ({
+        id: t.id,
+        name: t.name || t.id,
+        cpu: t.cpu ?? 0,
+        mem: t.mem ?? 0,
+        status: (t.status || 'idle').toLowerCase()
+      }))
+    }
+  } catch (error) {
+    // 静默
+  }
+}
+
+function goTaskDetail(t) {
+  if (t.id) router.push('/tasks/' + t.id)
+}
+
+async function reloadConfig() {
+  try {
+    const res = await systemAPI.reloadConfig()
+    if (res.data.success) ElMessage.success(res.data.message || '配置已刷新')
+    else ElMessage.error(res.data.message || '刷新失败')
+  } catch (error) {
+    ElMessage.error('刷新配置失败')
+  }
+}
+
+async function restartCrawlers() {
+  try {
+    await ElMessageBox.confirm('将停止所有运行中的爬虫任务并重置引擎，是否继续？', '确认重启', {
+      type: 'warning'
+    })
+    const res = await systemAPI.restartCrawlers()
+    if (res.data.success) {
+      ElMessage.success(res.data.message || '爬虫服务已重启')
+      await loadTaskResources()
+    } else {
+      ElMessage.error(res.data.message || '重启失败')
+    }
+  } catch (error) {
+    if (error !== 'cancel') ElMessage.error('重启失败')
+  }
+}
+
 let timer = null
 
 onMounted(async () => {
   await refreshGauges()
-  timer = setInterval(refreshGauges, 5000)
-
-  try {
-    const res = await taskAPI.getTasks({ page_size: 10 })
-    if (res.data.success) {
-      const taskList = res.data.data.list || res.data.data || []
-      tasks.value = taskList.map(t => ({
-        name: t.name || t.id,
-        // TODO: Replace with real resource-per-task data from backend when available
-        cpu: Math.round(Math.random() * 30),
-        mem: Math.round(Math.random() * 40),
-        status: t.status || 'idle'
-      }))
-    }
-  } catch (error) {
-    // TODO: Replace with real resource-per-task data from backend when available
-  }
+  await loadTaskResources()
+  timer = setInterval(async () => {
+    await refreshGauges()
+    await loadTaskResources()
+  }, 3000)
 })
 
 onUnmounted(() => {
@@ -281,7 +322,13 @@ onUnmounted(() => {
   font-size: 26px; font-weight: 700;
   color: var(--text-primary); letter-spacing: -0.5px;
 }
-.header-right { display: flex; align-items: center; }
+.header-right { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.btn-action {
+  padding: 6px 12px; font-size: 11px; font-weight: 500;
+  background: rgba(255,255,255,0.04); border: 1px solid var(--border-color);
+  border-radius: 8px; color: var(--text-secondary); cursor: pointer;
+}
+.btn-action:hover { background: rgba(255,255,255,0.08); color: var(--text-primary); }
 .refresh-tag {
   display: inline-flex; align-items: center; gap: 5px;
   font-size: 12px; font-weight: 500;

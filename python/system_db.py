@@ -142,7 +142,8 @@ class SystemDB:
             if conn:
                 conn.close()
 
-    def get_logs(self, level="", source="", task_id=None, page=1, page_size=50, user_id=None):
+    def get_logs(self, level="", source="", task_id=None, page=1, page_size=50,
+                 user_id=None, keyword="", date_from=None, date_to=None):
         conn = None
         try:
             conn = pymysql.connect(**self._config)
@@ -161,6 +162,20 @@ class SystemDB:
                 if task_id:
                     conditions.append("`task_id` = %(task_id)s")
                     params["task_id"] = task_id
+
+                if keyword:
+                    conditions.append(
+                        "(`message` LIKE %(keyword)s OR `source` LIKE %(keyword)s)"
+                    )
+                    params["keyword"] = "%{}%".format(keyword)
+
+                if date_from:
+                    conditions.append("DATE(`created_at`) >= %(date_from)s")
+                    params["date_from"] = date_from
+
+                if date_to:
+                    conditions.append("DATE(`created_at`) <= %(date_to)s")
+                    params["date_to"] = date_to
 
                 where = ""
                 if conditions:
@@ -183,6 +198,7 @@ class SystemDB:
 
                 for row in rows:
                     format_row_datetimes(row, "created_at")
+                    row["time"] = row.get("created_at")
 
                 return rows, total
         except pymysql.Error as e:

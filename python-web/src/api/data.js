@@ -25,7 +25,15 @@ export const dataAPI = {
     return api.post('/data/auto-write-config', data)
   },
 
+  getAutoWriteConfig() {
+    return api.get('/data/auto-write-config')
+  },
+
   pushConfig(data) {
     return api.post('/data/push-config', data)
+  },
+
+  getPushConfig() {
+    return api.get('/data/push-config')
   }
 }

@@ -50,7 +50,7 @@
             <div class="form-row">
               <div class="form-group full">
                 <label class="form-label">目标 URL</label>
-                <input v-model="form.url" type="text" class="form-input" :disabled="!editing" />
+                <input v-model="form.targetUrl" type="text" class="form-input" :disabled="!editing" />
               </div>
             </div>
             <div class="form-row">
@@ -59,22 +59,42 @@
                 <input v-model.number="form.intervalMinutes" type="number" class="form-input" :disabled="!editing" placeholder="例如：30" min="1" />
               </div>
               <div class="form-group">
-                <label class="form-label">并发数</label>
-                <input v-model="form.concurrency" type="number" class="form-input" :disabled="!editing" />
+                <label class="form-label">爬取页数</label>
+                <input v-model.number="form.totalPages" type="number" class="form-input" :disabled="!editing" min="1" max="100" />
               </div>
             </div>
             <div class="form-row">
               <div class="form-group">
-                <label class="form-label">请求间隔 (ms)</label>
-                <input v-model="form.interval" type="number" class="form-input" :disabled="!editing" />
+                <label class="form-label">并发数</label>
+                <input v-model.number="form.concurrency" type="number" class="form-input" :disabled="!editing" min="1" />
               </div>
+              <div class="form-group">
+                <label class="form-label">请求间隔 (秒)</label>
+                <input v-model.number="form.intervalSeconds" type="number" class="form-input" :disabled="!editing" min="1" max="60" />
+              </div>
+            </div>
+            <div class="form-row">
               <div class="form-group">
                 <label class="form-label">最大重试次数</label>
-                <input v-model="form.maxRetries" type="number" class="form-input" :disabled="!editing" />
+                <input v-model.number="form.maxRetries" type="number" class="form-input" :disabled="!editing" min="0" />
+              </div>
+              <div class="form-group">
+                <label class="form-label">重试间隔 (秒)</label>
+                <input v-model.number="form.retryInterval" type="number" class="form-input" :disabled="!editing" min="1" />
               </div>
             </div>
             <div class="form-row">
-              <div class="form-group">
+              <div class="form-group full">
+                <label class="form-label">任务类型</label>
+                <select v-model="form.taskType" class="form-input" :disabled="!editing">
+                  <option value="crawler">爬虫任务</option>
+                  <option value="data_collection">数据采集</option>
+                  <option value="monitor">监控任务</option>
+                </select>
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group full">
                 <label class="form-label">爬取模式</label>
                 <select v-model="form.crawlMode" class="form-input" :disabled="!editing">
                   <option value="link">链接模式</option>
@@ -82,14 +102,19 @@
                   <option value="mixed">混合模式</option>
                 </select>
               </div>
-              <div class="form-group">
-                <label class="form-label">爬取页数</label>
-                <input v-model.number="form.totalPages" type="number" class="form-input" :disabled="!editing" min="1" max="100" />
+            </div>
+            <div class="form-row">
+              <div class="form-group full">
+                <label class="form-label">代理组</label>
+                <select v-model="form.proxyGroup" class="form-input" :disabled="!editing">
+                  <option value="">不使用代理组</option>
+                  <option v-for="g in proxyGroups" :key="g.id" :value="g.name">{{ g.name }}</option>
+                </select>
               </div>
             </div>
             <div class="form-row">
               <div class="form-group full">
-                <label class="form-label">请求头 (JSON)</label>
+                <label class="form-label">请求头 (JSON，可选)</label>
                 <textarea v-model="form.headers" class="form-textarea" :disabled="!editing" rows="3"></textarea>
               </div>
             </div>
@@ -310,14 +335,21 @@ import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import NavBar from '../components/NavBar.vue'
 import { taskAPI } from '../api/task'
+import { proxyAPI } from '../api/proxy'
 import { systemAPI } from '../api/system'
 import { dataAPI } from '../api/data'
+import {
+  applyConfigToTaskDetailForm,
+  buildTaskDetailConfig,
+  parseTemplateConfig
+} from '../utils/templateConfig'
 
 const route = useRoute()
 const activeTab = ref('info')
 const editing = ref(false)
 const autoScroll = ref(true)
 const logViewerRef = ref(null)
+const proxyGroups = ref([])
 
 const task = ref({})
 
@@ -338,88 +370,27 @@ function formatDuration(seconds) {
   return `${seconds}s`
 }
 
-function minutesToCron(minutes) {
-  if (!minutes || minutes < 1) return '*/30 * * * *'
-  return `*/${minutes} * * * *`
-}
-
-function cronToMinutes(cron) {
-  if (!cron) return 30
-  const match = cron.match(/^\*\/(\d+)\s+\*\s+\*\s+\*\s+\*$/)
-  if (match) return parseInt(match[1]) || 30
-  return 30
-}
-
 const form = reactive({
   name: '',
-  url: '',
+  targetUrl: '',
+  taskType: 'crawler',
   intervalMinutes: 30,
-  concurrency: 0,
-  interval: 0,
-  maxRetries: 0,
-  headers: '',
+  concurrency: 1,
+  intervalSeconds: 3,
+  maxRetries: 3,
+  retryInterval: 60,
   crawlMode: 'link',
-  totalPages: 1
+  totalPages: 1,
+  proxyGroup: '',
+  headers: ''
 })
 
 const formBackup = ref(null)
 
-function parseTaskConfig(raw) {
-  if (!raw) return {}
-  if (typeof raw === 'object') return raw
-  if (typeof raw === 'string' && raw.trim()) {
-    try {
-      return JSON.parse(raw)
-    } catch (e) {
-      return {}
-    }
-  }
-  return {}
-}
-
 function loadForm() {
-  const t = task.value
-  const config = parseTaskConfig(t.config)
-
-  // 任务表字段（优先从任务表读取，其次从 config 读取）
-  form.name = t.name || ''
-  form.url = t.target_url || config.target_url || ''
-  
-  // 处理执行周期（cron_expr 在 config 中，格式为 "*/30 * * * *"）
-  const cronExpr = config.cron_expr || t.cron_expr || ''
-  if (cronExpr) {
-    form.intervalMinutes = cronToMinutes(cronExpr)
-  } else {
-    // 无 cron 时回退：从 interval_seconds 换算为分钟
-    const intervalSec = config.interval_seconds || config.interval || t.interval_seconds || 0
-    form.intervalMinutes = intervalSec > 0 ? Math.round(intervalSec / 60) : 30
-  }
-  
-  // 处理并发数（config 中是 concurrency）
-  form.concurrency = config.concurrency || t.concurrency || 0
-  
-  // 处理请求间隔（config 中是 interval_seconds）
-  form.interval = config.interval_seconds || config.interval || t.interval_seconds || 0
-  
-  // 处理最大重试次数（config 中是 maxRetries/max_retries，表中是 retry_count）
-  form.maxRetries = config.maxRetries ?? config.max_retries ?? t.retry_count ?? 0
-
-  // 处理爬取模式
-  form.crawlMode = config.crawl_mode || 'link'
-
-  // 处理爬取页数
-  form.totalPages = config.total_pages || 1
-
-  // 处理请求头
-  if (typeof config.headers === 'object') {
-    form.headers = JSON.stringify(config.headers)
-  } else if (typeof config.headers === 'string') {
-    form.headers = config.headers
-  } else {
-    form.headers = ''
-  }
-  
-  formBackup.value = { ...form }
+  const config = parseTaskConfig(task.value.config)
+  applyConfigToTaskDetailForm(form, task.value, config)
+  formBackup.value = JSON.parse(JSON.stringify(form))
 }
 
 function cancelEdit() {
@@ -430,42 +401,33 @@ function cancelEdit() {
 }
 
 async function saveConfig() {
+  if (!form.name.trim()) {
+    ElMessage.warning('请输入任务名称')
+    return
+  }
+  if (!form.targetUrl.trim()) {
+    ElMessage.warning('请输入目标 URL')
+    return
+  }
   try {
-    // 解析请求头 JSON 字符串为对象
-    let parsedHeaders = form.headers
-    if (typeof form.headers === 'string' && form.headers.trim()) {
-      try {
-        parsedHeaders = JSON.parse(form.headers)
-      } catch (e) {
-        parsedHeaders = form.headers.trim()
-      }
-    }
-
-    const config = {
-      target_url: form.url,
-      total_pages: form.totalPages,
-      cron_expr: minutesToCron(form.intervalMinutes),
-      interval_seconds: form.interval,
-      concurrency: form.concurrency,
-      maxRetries: form.maxRetries,
-      crawl_mode: form.crawlMode,
-      headers: parsedHeaders
-    }
+    const config = buildTaskDetailConfig(form)
     const res = await taskAPI.updateTask(task.value.id, {
-      name: form.name,
-      config: config
+      name: form.name.trim(),
+      config
     })
     if (res.data.success) {
-      task.value.name = form.name
-      task.value.target_url = form.url
+      task.value.name = form.name.trim()
+      task.value.target_url = config.target_url
+      task.value.proxy_group = config.proxy_group
       task.value.config = config
+      formBackup.value = JSON.parse(JSON.stringify(form))
       editing.value = false
       ElMessage.success('保存成功')
     } else {
       ElMessage.error(res.data.message || '保存失败')
     }
   } catch (e) {
-    ElMessage.error('保存失败')
+    ElMessage.error(e.response?.data?.message || '保存失败')
   }
 }
 
@@ -505,6 +467,21 @@ function getPreviewImageUrl(row) {
   if (url) return url
   if (row.type === 'image' && row.link) return row.link.trim()
   return ''
+}
+
+function parseTaskConfig(raw) {
+  return parseTemplateConfig(raw)
+}
+
+async function fetchProxyGroups() {
+  try {
+    const res = await proxyAPI.getProxyGroups()
+    if (res.data.success) {
+      proxyGroups.value = res.data.data || []
+    }
+  } catch (e) {
+    proxyGroups.value = []
+  }
 }
 
 async function fetchTask() {
@@ -711,6 +688,7 @@ async function loadPreviewTab() {
 }
 
 onMounted(() => {
+  fetchProxyGroups()
   fetchTask()
 })
 

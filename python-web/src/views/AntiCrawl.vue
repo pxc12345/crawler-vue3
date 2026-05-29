@@ -135,6 +135,7 @@
 import { ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { proxyAPI } from '../api/proxy'
+import { taskAPI } from '../api/task'
 import NavBar from '../components/NavBar.vue'
 
 const activeTab = ref('list')
@@ -145,6 +146,7 @@ const editConcurrent = ref(5)
 
 const globalRpm = ref(100)
 const globalConcurrent = ref(10)
+const globalRetry = ref(3)
 
 const blackInput = ref({ url: '', reason: '' })
 const whiteInput = ref({ url: '', reason: '' })
@@ -208,7 +210,8 @@ async function saveGlobalFreq() {
     await proxyAPI.setRateLimit({
       task_id: null,
       requests_per_minute: globalRpm.value,
-      concurrent_max: globalConcurrent.value
+      concurrent_max: globalConcurrent.value,
+      retry_count: globalRetry.value
     })
     ElMessage.success('全局频率设置已保存')
   } catch (error) {
@@ -270,15 +273,38 @@ async function fetchRateLimits() {
   try {
     const res = await proxyAPI.getRateLimits()
     if (res.data.success) {
-      const data = res.data.data || []
-      taskFreqs.value = data.map(t => ({
-        id: t.id || t.task_id,
-        name: t.name || t.task_name || t.task_id,
-        rpm: t.requests_per_minute || t.rpm || 0,
-        concurrent: t.concurrent_max || t.concurrent || 0,
-        requests_per_minute: t.requests_per_minute,
-        concurrent_max: t.concurrent_max
-      }))
+      const data = res.data.data
+      if (data && data.global) {
+        globalRpm.value = data.global.requests_per_minute || 100
+        globalConcurrent.value = data.global.concurrent_max || 10
+        globalRetry.value = data.global.retry_count || 3
+      } else if (data && data.requests_per_minute) {
+        globalRpm.value = data.requests_per_minute
+        globalConcurrent.value = data.concurrent_max || 10
+        globalRetry.value = data.retry_count || 3
+      }
+      const rateByTask = {}
+      const taskRates = (data && data.tasks) ? data.tasks : (Array.isArray(data) ? data : [])
+      taskRates.forEach(t => {
+        if (t.task_id) rateByTask[t.task_id] = t
+      })
+      const tRes = await taskAPI.getTasks({ page_size: 50 })
+      const tasks = tRes.data.success
+        ? (tRes.data.data?.list || tRes.data.data || [])
+        : []
+      taskFreqs.value = tasks.map(t => {
+        const cfg = rateByTask[t.id] || {}
+        return {
+          id: t.id,
+          task_id: t.id,
+          name: t.name || `任务 ${t.id}`,
+          rpm: cfg.requests_per_minute || globalRpm.value,
+          concurrent: cfg.concurrent_max || globalConcurrent.value,
+          requests_per_minute: cfg.requests_per_minute,
+          concurrent_max: cfg.concurrent_max,
+          retry_count: cfg.retry_count || globalRetry.value
+        }
+      })
     }
   } catch (error) {
     // 静默处理

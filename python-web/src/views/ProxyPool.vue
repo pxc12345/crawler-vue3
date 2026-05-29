@@ -31,7 +31,7 @@
         </div>
         <div class="card stat-card">
           <span class="stat-num available">{{ proxies.length }}</span>
-          <span class="stat-label">在线数量</span>
+          <span class="stat-label">代理总数</span>
         </div>
       </div>
 
@@ -55,13 +55,13 @@
                 <td class="mono">{{ p.ip }}:{{ p.port }}</td>
                 <td><span class="proto-tag">{{ p.protocol.toUpperCase() }}</span></td>
                 <td>
-                  <span class="status-dot" :class="'dot-' + p.status"></span>
-                  {{ p.status === 'online' ? '在线' : '离线' }}
+                  <span class="status-dot" :class="isProxyOnline(p) ? 'dot-online' : 'dot-offline'"></span>
+                  {{ isProxyOnline(p) ? '在线' : '离线' }}
                 </td>
                 <td>
                   <div class="success-bar">
-                    <div class="success-fill" :style="{ width: (p.success_rate || p.successRate || 0) + '%' }" :class="(p.success_rate || p.successRate || 0)>=80 ? 's-high' : (p.success_rate || p.successRate || 0)>=50 ? 's-mid' : 's-low'"></div>
-                    <span class="success-text">{{ p.success_rate || p.successRate || 0 }}%</span>
+                    <div class="success-fill" :style="{ width: proxySuccessRate(p) + '%' }" :class="proxySuccessRate(p)>=80 ? 's-high' : proxySuccessRate(p)>=50 ? 's-mid' : 's-low'"></div>
+                    <span class="success-text">{{ proxySuccessRate(p) }}%</span>
                   </div>
                 </td>
                 <td>{{ p.alive_time || p.aliveTime || '-' }}</td>
@@ -79,16 +79,16 @@
       <div class="card">
         <div class="section-header">
           <h3 class="section-title">代理分组</h3>
-          <button class="btn-sm" @click="showGroupModal = true">创建分组</button>
+          <button class="btn-sm" @click="manageGroupTarget = null; newGroup = { name: '', proxies: [] }; showGroupModal = true">创建分组</button>
         </div>
         <div class="group-grid">
           <div v-for="group in groups" :key="group.id" class="group-card">
             <div class="group-header">
               <span class="group-name">{{ group.name }}</span>
-              <span class="group-count">{{ group.proxies.length }} 个代理</span>
+              <span class="group-count">{{ (group.proxies || []).length }} 个代理</span>
             </div>
             <div class="group-proxies">
-              <span v-for="pid in group.proxies" :key="pid" class="group-proxy-tag">
+              <span v-for="pid in (group.proxies || [])" :key="pid" class="group-proxy-tag">
                 {{ getProxyById(pid)?.ip || '未知' }}
               </span>
             </div>
@@ -126,25 +126,35 @@
         </div>
       </div>
 
-      <div v-if="showGroupModal" class="modal-overlay" @click.self="showGroupModal = false">
+      <div v-if="showGroupModal" class="modal-overlay" @click.self="closeGroupModal">
         <div class="modal-card">
-          <h3 class="modal-title">创建分组</h3>
+          <h3 class="modal-title">{{ manageGroupTarget ? '管理分组' : '创建分组' }}</h3>
           <div class="form-group">
             <label class="form-label">分组名称</label>
-            <input v-model="newGroup.name" class="input" placeholder="高可用代理组" />
+            <input v-model="newGroup.name" class="input" placeholder="高可用代理组" :disabled="!!manageGroupTarget" />
           </div>
           <div class="form-group">
             <label class="form-label">分配代理 (多选)</label>
+            <p v-if="proxies.length === 0" class="proxy-check-hint">暂无代理，请先添加代理</p>
+            <p v-else-if="onlineCount === 0" class="proxy-check-hint">
+              当前无在线代理，仍可先分配到分组；爬虫运行时仅使用在线代理。建议点击列表「刷新」检测可用性。
+            </p>
             <div class="proxy-checks">
-              <label v-for="p in proxies" :key="p.id" class="proxy-check" v-show="p.status==='online'">
-                <input type="checkbox" :value="p.id" v-model="newGroup.proxies" />
+              <label
+                v-for="p in proxies"
+                :key="p.id"
+                class="proxy-check"
+                :class="{ 'proxy-check-offline': !isProxyOnline(p) }"
+              >
+                <input type="checkbox" :value="Number(p.id)" v-model="newGroup.proxies" />
                 <span>{{ p.ip }}:{{ p.port }}</span>
+                <span class="proxy-check-status">{{ isProxyOnline(p) ? '在线' : '离线' }}</span>
               </label>
             </div>
           </div>
           <div class="modal-actions">
-            <button class="btn-cancel" @click="showGroupModal = false">取消</button>
-            <button class="btn-confirm" @click="createGroup">创建分组</button>
+            <button class="btn-cancel" @click="closeGroupModal">取消</button>
+            <button class="btn-confirm" @click="manageGroupTarget ? saveGroupAssignments() : createGroup()">{{ manageGroupTarget ? '保存分配' : '创建分组' }}</button>
           </div>
         </div>
       </div>
@@ -168,22 +178,43 @@ const proxies = ref([])
 
 const groups = ref([])
 
-const onlineCount = computed(() => proxies.value.filter(p => p.status === 'online').length)
+function isProxyOnline(p) {
+  return (p.status || '').toLowerCase() === 'online'
+}
+
+function proxySuccessRate(p) {
+  const n = Number(p.success_rate ?? p.successRate ?? 0)
+  return Number.isFinite(n) ? n : 0
+}
+
+const onlineCount = computed(() => proxies.value.filter(isProxyOnline).length)
 
 const avgSuccessRate = computed(() => {
-  const online = proxies.value.filter(p => p.status === 'online')
+  const online = proxies.value.filter(isProxyOnline)
   if (online.length === 0) return 0
-  return Math.round(online.reduce((s, p) => s + (p.success_rate || p.successRate || 0), 0) / online.length)
+  const sum = online.reduce((s, p) => s + proxySuccessRate(p), 0)
+  const avg = Math.round(sum / online.length)
+  return Number.isFinite(avg) ? avg : 0
 })
 
 const avgAliveTime = computed(() => {
-  const online = proxies.value.filter(p => p.status === 'online')
+  const online = proxies.value.filter(isProxyOnline)
   if (online.length === 0) return '-'
-  return '2.8天'
+  const secs = online.reduce((s, p) => s + (p.alive_seconds || 0), 0)
+  const avg = Math.round(secs / online.length)
+  if (avg < 60) return `${avg}秒`
+  if (avg < 3600) return `${Math.round(avg / 60)}分钟`
+  if (avg < 86400) return `${(avg / 3600).toFixed(1)}小时`
+  return `${(avg / 86400).toFixed(1)}天`
 })
 
+function normalizeProxyIds(ids) {
+  return (ids || []).map(id => Number(id)).filter(id => Number.isFinite(id))
+}
+
 function getProxyById(id) {
-  return proxies.value.find(p => p.id === id)
+  const nid = Number(id)
+  return proxies.value.find(p => Number(p.id) === nid)
 }
 
 async function addProxy() {
@@ -193,6 +224,7 @@ async function addProxy() {
   }
   try {
     const res = await proxyAPI.addProxy({
+      host: newProxy.value.ip,
       ip: newProxy.value.ip,
       port: parseInt(newProxy.value.port) || 8080,
       protocol: newProxy.value.protocol
@@ -200,7 +232,12 @@ async function addProxy() {
     if (res.data.success) {
       newProxy.value = { ip: '', port: '', protocol: 'http' }
       showAddModal.value = false
-      ElMessage.success('代理添加成功')
+      const probed = res.data.data?.proxy
+      if (probed && isProxyOnline(probed)) {
+        ElMessage.success('代理添加成功，已在线')
+      } else {
+        ElMessage.warning('代理已添加，但当前探测为离线（请确认 Clash 已连接后点刷新）')
+      }
       await fetchProxies()
     } else {
       ElMessage.error(res.data.message || '添加失败')
@@ -259,9 +296,10 @@ async function createGroup() {
   try {
     const res = await proxyAPI.createProxyGroup({ name: newGroup.value.name })
     if (res.data.success) {
-      const group = res.data.data
-      for (const pid of newGroup.value.proxies) {
-        await proxyAPI.assignProxyToGroup({ proxy_id: pid, group_id: group.id })
+      const group = res.data.data || {}
+      const gid = group.id || group.group_id
+      if (gid) {
+        await proxyAPI.syncGroupProxies(gid, normalizeProxyIds(newGroup.value.proxies))
       }
       newGroup.value = { name: '', proxies: [] }
       showGroupModal.value = false
@@ -273,8 +311,45 @@ async function createGroup() {
   }
 }
 
+const manageGroupTarget = ref(null)
+const manageGroupProxies = ref([])
+
 function manageGroup(group) {
-  ElMessage.info(`管理分组: ${group.name}`)
+  manageGroupTarget.value = group
+  const selected = normalizeProxyIds(group.proxies || [])
+  manageGroupProxies.value = [...selected]
+  newGroup.value = { name: group.name, proxies: [...selected] }
+  showGroupModal.value = true
+}
+
+function closeGroupModal() {
+  showGroupModal.value = false
+  manageGroupTarget.value = null
+  newGroup.value = { name: '', proxies: [] }
+}
+
+async function saveGroupAssignments() {
+  if (!manageGroupTarget.value) {
+    await createGroup()
+    return
+  }
+  const gid = manageGroupTarget.value.id
+  if (!gid) {
+    ElMessage.error('分组 ID 无效')
+    return
+  }
+  try {
+    const res = await proxyAPI.syncGroupProxies(gid, normalizeProxyIds(newGroup.value.proxies))
+    if (res.data.success) {
+      closeGroupModal()
+      ElMessage.success('分组已更新')
+      await fetchGroups()
+    } else {
+      ElMessage.error(res.data.message || '更新分组失败')
+    }
+  } catch (error) {
+    ElMessage.error(error.response?.data?.message || '更新分组失败')
+  }
 }
 
 function deleteGroup(group) {
@@ -282,6 +357,7 @@ function deleteGroup(group) {
     confirmButtonText: '确定', cancelButtonText: '取消', type: 'warning'
   }).then(async () => {
     try {
+      await proxyAPI.deleteProxyGroup(group.id)
       groups.value = groups.value.filter(g => g.id !== group.id)
       ElMessage.success('分组已删除')
     } catch (error) {
@@ -294,7 +370,7 @@ async function fetchProxies() {
   try {
     const res = await proxyAPI.getProxies({ page_size: 100 })
     if (res.data.success) {
-      proxies.value = res.data.data.list || res.data.data || []
+      proxies.value = res.data.list || res.data.data?.list || res.data.data || []
     }
   } catch (error) {
     ElMessage.error('获取代理列表失败')
@@ -305,7 +381,10 @@ async function fetchGroups() {
   try {
     const res = await proxyAPI.getProxyGroups()
     if (res.data.success) {
-      groups.value = res.data.data || []
+      groups.value = (res.data.data || []).map(g => ({
+        ...g,
+        proxies: normalizeProxyIds(g.proxies || [])
+      }))
     }
   } catch (error) {
     // 静默处理
@@ -492,6 +571,14 @@ onMounted(() => {
   border-radius: 6px; font-size: 12px; color: var(--text-secondary); cursor: pointer;
 }
 .proxy-check input { accent-color: #4c6ef5; }
+.proxy-check-hint {
+  font-size: 12px; color: var(--text-muted); margin-bottom: 8px; line-height: 1.5;
+}
+.proxy-check-offline { opacity: 0.75; }
+.proxy-check-status {
+  font-size: 10px; padding: 1px 6px; border-radius: 4px;
+  background: rgba(255,255,255,0.06); color: var(--text-muted);
+}
 
 @media (max-width: 768px) {
   .content { padding: 24px 16px 64px; }
