@@ -81,7 +81,7 @@ window.__showToast = showToast
           {{ loading ? '进入中...' : '立即进入' }}
         </button>
       </div>
-      <p class="login-footer">专属定制祝福，只为一人</p>
+      <p class="login-footer">私人定制</p>
     </div>
   </div>
 </template>
