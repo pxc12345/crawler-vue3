@@ -58,6 +58,8 @@ from task_db import task_db
 from alert_db import alert_db
 from proxy_db import proxy_db
 from system_db import system_db
+from blessing_api import blessing_bp
+from blessing_db import blessing_db
 import re
 import csv
 import io
@@ -85,6 +87,7 @@ except Exception as e:
 def _cors_origins():
     default = (
         "https://crawler-pro.onrender.com,"
+        "https://crawler-vue3.onrender.com,"
         "http://localhost:5173,http://127.0.0.1:5173,"
         "http://localhost:3000,http://127.0.0.1:3000"
     )
@@ -118,6 +121,9 @@ alert_db.connect()
 proxy_db.connect()
 system_db.connect()
 notification_db._init_db()
+
+blessing_db.init_tables()
+app.register_blueprint(blessing_bp)
 
 _crawler_boot = get_engine_info()
 print(
